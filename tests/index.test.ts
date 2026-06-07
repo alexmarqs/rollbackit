@@ -1,9 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import {
-	createRollback,
-	RollbackCommittedError,
-	withRollback,
-} from "../src";
+import { createRollback, RollbackCommittedError, withRollback } from "../src";
 
 describe("createRollback", () => {
 	test("runs rollback operations in reverse (LIFO) order", async () => {
