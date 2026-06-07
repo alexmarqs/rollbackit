@@ -20,19 +20,6 @@ export class RollbackError extends Error {
 		// throw site (V8 only; no-op elsewhere).
 		Error.captureStackTrace?.(this, new.target);
 	}
-
-	/**
-	 * Serialize to a plain object so the error survives `JSON.stringify` in
-	 * structured loggers, where `name`/`message`/`stack` are otherwise
-	 * non-enumerable and would be dropped.
-	 */
-	toJSON() {
-		return {
-			name: this.name,
-			message: this.message,
-			stack: this.stack,
-		};
-	}
 }
 
 /**
