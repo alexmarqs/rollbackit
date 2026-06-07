@@ -3,7 +3,7 @@
 	"type": "module",
 	"version": "0.0.0",
 	"sideEffects": false,
-	"description": "Rollbackit is a simple and lightweight tool for rolling back operations",
+	"description": "Typesafe operations rollback",
 	"author": "Alexandre Marques",
 	"license": "MIT",
 	"homepage": "https://github.com/alexmarqs/rollbackit#readme",
