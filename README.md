@@ -39,23 +39,6 @@ yarn add rollbackit
 bun add rollbackit
 ```
 
-## Quick Start
-
-```ts
-import { withRollback } from "rollbackit";
-
-const user = await withRollback(async (rb) => {
-  const created = await db.createUser(data);
-  rb.add("delete user", () => db.deleteUser(created.id));
-
-  await storage.createBucket(created.id);
-  rb.add("delete bucket", () => storage.deleteBucket(created.id));
-
-  return created; // success → committed, nothing is rolled back
-});
-// if anything above throws: "delete bucket" then "delete user" run, then the error re-throws
-```
-
 ## Why
 
 When an operation is made up of several steps that each have a side effect, a
@@ -107,7 +90,9 @@ try {
   rb.commit(); // all good — keep the changes
 } catch (error) {
   const failures = await rb.rollback(); // undo in reverse order
-  // `failures` lists any rollback operations that themselves threw
+  if (failures.length) {
+    logger.warn("rollback incomplete", failures); // operations that threw while undoing
+  }
   throw error;
 }
 ```
@@ -123,8 +108,8 @@ Creates a rollback instance.
 | `add(description, rollback)` | `(string, () => Promise<void>) => void` | Register a rollback operation. Throws `RollbackCommittedError` if called after `commit`/`rollback`. |
 | `commit()` | `() => void` | Mark the work as successful and discard the undo log. Safe to call multiple times. |
 | `rollback()` | `() => Promise<readonly FailedRollback[]>` | Run the registered operations in reverse order. Returns the operations that threw. Safe to call multiple times; subsequent calls are no-ops. |
-| `size` | `readonly number` | Number of registered operations. |
-| `operations` | `readonly RollbackOperation[]` | Snapshot of currently registered operations. |
+| `size` | `number` | Number of registered operations (read-only). |
+| `operations` | `readonly RollbackOperation[]` | Snapshot of currently registered operations (read-only). |
 
 ### `withRollback<T>(fn): Promise<T>`
 
@@ -137,7 +122,6 @@ order on failure (then re-throws).
 - **Failures don't stop the sequence** — if a rollback operation throws, it's collected into the returned `FailedRollback[]` and the remaining operations still run. Nothing else throws during `rollback()`.
 - **Idempotent lifecycle** — once committed or rolled back, the instance is finalized; further `add` calls throw `RollbackCommittedError`.
 
-> The `Rollback`, `RollbackOperation`, `FailedRollback` types and the `RollbackError` / `RollbackCommittedError` classes are also exported.
 
 ## Contributing
 
