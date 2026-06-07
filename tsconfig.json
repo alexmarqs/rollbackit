@@ -1,28 +1,28 @@
 {
-  "compilerOptions": {
-    // Environment setup & latest features
-    "target": "esnext",
-    "lib": ["es2023"],
-    "module": "preserve",
-    "moduleDetection": "force",
-    "types": ["node"],
-    "resolveJsonModule": true,
+	"compilerOptions": {
+		// Environment setup & latest features
+		"target": "esnext",
+		"lib": ["es2023"],
+		"module": "preserve",
+		"moduleDetection": "force",
+		"types": ["node"],
+		"resolveJsonModule": true,
 
-    // Bundler mode
-    "moduleResolution": "bundler",
-    "verbatimModuleSyntax": true,
-    "esModuleInterop": true,
-    "isolatedModules": true,
+		// Bundler mode
+		"moduleResolution": "bundler",
+		"verbatimModuleSyntax": true,
+		"esModuleInterop": true,
+		"isolatedModules": true,
 
-    // Declaration output (consumed by tsdown for .d.ts generation)
-    "declaration": true,
-    "emitDeclarationOnly": true,
+		// Declaration output (consumed by tsdown for .d.ts generation)
+		"declaration": true,
+		"emitDeclarationOnly": true,
 
-    // Best practices
-    "strict": true,
-    "skipLibCheck": true,
-    "noUnusedLocals": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+		// Best practices
+		"strict": true,
+		"skipLibCheck": true,
+		"noUnusedLocals": true
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules", "dist"]
 }

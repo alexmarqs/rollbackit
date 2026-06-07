@@ -35,12 +35,43 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      # The build tool (tsdown/rolldown) requires Node 20+; the emitted dist
+      # targets Node 18 (see tsdown.config.ts). We build once here and share it.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
   test:
     needs: verify
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 22]
+        # vitest 4 requires Node 20+, so the test suite runs on 20 and 22.
+        node-version: [20, 22]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,8 +88,33 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm run build
-
       - name: Test
         run: pnpm run test
+
+  compat:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Prove the shipped dist actually loads + runs on every supported
+        # runtime, including Node 18 (the engines floor consumers rely on).
+        node-version: [18, 20, 22]
+    steps:
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Smoke test CJS entry
+        run: |
+          node -e "const { fn } = require('./dist/index.cjs'); if (fn() !== 'Hello, tsdown!') { throw new Error('CJS smoke test failed, got: ' + fn()) }"
+
+      - name: Smoke test ESM entry
+        run: |
+          node --input-type=module -e "import('./dist/index.mjs').then(({ fn }) => { if (fn() !== 'Hello, tsdown!') { throw new Error('ESM smoke test failed, got: ' + fn()) } })"
