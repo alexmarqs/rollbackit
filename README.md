@@ -143,13 +143,6 @@ order on failure (then re-throws).
 
 Contributions are welcome! Please open an issue or pull request.
 
-```bash
-npm install       # install dependencies
-npm run test      # run the unit tests
-npm run build     # build the library
-npm run typecheck # type-check without emitting
-```
-
 ## License
 
 [MIT](./LICENSE) © [Alexandre Marques](https://github.com/alexmarqs)
