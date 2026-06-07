@@ -1,18 +1,27 @@
 import { RollbackCommittedError } from "./errors";
-import type { FailedRollback, Rollback, RollbackOperation } from "./types";
+import type {
+	FailedRollback,
+	Rollback,
+	RollbackOperation,
+	RollbackResult,
+} from "./types";
 
 /**
  * Runs the rollback operations in reverse order.
  *
- * Failures are collected and the sequence continues, so a single failing
- * operation does not prevent the rest from running.
+ * By default failures are collected and the sequence continues, so a single
+ * failing operation does not prevent the rest from running. When
+ * `stopOnRollbackError` is set, the sequence stops at the first failure and
+ * the remaining (older) operations are returned as `pending`, un-run.
  *
  * @param ops - The rollback operations to run.
- * @returns The failed rollback operations.
+ * @param stopOnRollbackError - Stop at the first failing operation.
+ * @returns The failures and any operations left un-run.
  */
 const runRollback = async (
 	ops: RollbackOperation[],
-): Promise<FailedRollback[]> => {
+	stopOnRollbackError: boolean,
+): Promise<RollbackResult> => {
 	const failures: FailedRollback[] = [];
 
 	// run the rollback operations in reverse order
@@ -22,11 +31,16 @@ const runRollback = async (
 			await op.rollback();
 		} catch (error) {
 			failures.push({ description: op.description, error });
-			// continue to the next operation, failures are being collected
+
+			// stop at the first failure when requested; the older operations
+			// (indices 0..i-1) were never attempted, so report them as pending
+			if (stopOnRollbackError) {
+				return { failures, pending: ops.slice(0, i) };
+			}
 		}
 	}
 
-	return failures;
+	return { failures, pending: [] };
 };
 
 /**
@@ -50,18 +64,21 @@ export const createRollback = (): Rollback => {
 			committed = true;
 			ops.length = 0;
 		},
-		rollback: async () => {
+		rollback: async (options) => {
 			if (committed) {
-				return [];
+				return { failures: [], pending: [] };
 			}
 
 			committed = true;
 
-			const failures = await runRollback(ops);
+			const result = await runRollback(
+				ops,
+				options?.stopOnRollbackError ?? false,
+			);
 
 			ops.length = 0;
 
-			return failures;
+			return result;
 		},
 		get operations() {
 			return [...ops];

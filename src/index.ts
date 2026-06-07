@@ -5,4 +5,7 @@ export type {
 	FailedRollback,
 	Rollback,
 	RollbackOperation,
+	RollbackOptions,
+	RollbackResult,
+	WithRollbackOptions,
 } from "./lib/core/types";
