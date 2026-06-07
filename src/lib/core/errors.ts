@@ -16,8 +16,6 @@ export class RollbackError extends Error {
 	constructor(message: string, options?: ErrorOptions) {
 		super(createMessage(message), options);
 		this.name = new.target.name;
-		// Strip the constructor frame from the stack so traces point at the
-		// throw site (V8 only; no-op elsewhere).
 		Error.captureStackTrace?.(this, new.target);
 	}
 }
