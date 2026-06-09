@@ -11,16 +11,16 @@ import type {
  *
  * By default failures are collected and the sequence continues, so a single
  * failing operation does not prevent the rest from running. When
- * `stopOnRollbackError` is set, the sequence stops at the first failure and
+ * `stopOnFailure` is set, the sequence stops at the first failure and
  * the remaining (older) operations are returned as `pending`, un-run.
  *
  * @param ops - The rollback operations to run.
- * @param stopOnRollbackError - Stop at the first failing operation.
+ * @param stopOnFailure - Stop at the first failing operation.
  * @returns The failures and any operations left un-run.
  */
 const runRollback = async (
 	ops: RollbackOperation[],
-	stopOnRollbackError: boolean,
+	stopOnFailure: boolean,
 ): Promise<RollbackResult> => {
 	const failures: FailedRollback[] = [];
 
@@ -34,7 +34,7 @@ const runRollback = async (
 
 			// stop at the first failure when requested; the older operations
 			// (indices 0..i-1) were never attempted, so report them as pending
-			if (stopOnRollbackError) {
+			if (stopOnFailure) {
 				return { failures, pending: ops.slice(0, i) };
 			}
 		}
@@ -53,12 +53,12 @@ export const createRollback = (): Rollback => {
 	const ops: RollbackOperation[] = [];
 
 	return {
-		add: (description, rollback) => {
+		add: (description, rollback, options) => {
 			if (committed) {
 				throw new RollbackCommittedError();
 			}
 
-			ops.push({ description, rollback });
+			ops.push({ description, rollback, ...options });
 		},
 		commit: () => {
 			committed = true;
@@ -73,7 +73,7 @@ export const createRollback = (): Rollback => {
 
 			const result = await runRollback(
 				ops,
-				options?.stopOnRollbackError ?? false,
+				options?.stopOnFailure ?? false,
 			);
 
 			ops.length = 0;

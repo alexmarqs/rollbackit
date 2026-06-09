@@ -1,4 +1,16 @@
 /**
+ * Per-operation options, set via the third argument to `add`.
+ */
+export type OperationOptions = {
+	/**
+	 * The group this operation belongs to, if registered with `parallelGroup`.
+	 * Operations sharing a `parallelGroup` are rolled back concurrently, as a
+	 * single step slotted at the position of the group's newest member.
+	 */
+	parallelGroup?: string | number;
+} & Pick<RollbackOptions, "stopOnFailure">;
+
+/**
  * A rollback operation.
  */
 export type RollbackOperation = {
@@ -10,7 +22,7 @@ export type RollbackOperation = {
 	 * The rollback function.
 	 */
 	rollback: () => Promise<void>;
-};
+} & OperationOptions;
 
 /**
  * A failed rollback operation.
@@ -35,7 +47,7 @@ export type RollbackResult = {
 	 */
 	failures: readonly FailedRollback[];
 	/**
-	 * Operations that were never run because `stopOnRollbackError` halted the
+	 * Operations that were never run because `stopOnFailure` halted the
 	 * sequence early. Carries the `rollback` functions, so the caller can log,
 	 * hand off, or retry them. Empty unless an early stop occurred.
 	 *
@@ -45,7 +57,7 @@ export type RollbackResult = {
 };
 
 /**
- * Options for running the rollback operations.
+ * Run-level options for executing the rollback operations.
  */
 export type RollbackOptions = {
 	/**
@@ -55,7 +67,7 @@ export type RollbackOptions = {
 	 * un-run. Use this when compensations are ordered dependencies; leave it
 	 * `false` (the default) for independent, best-effort cleanup.
 	 */
-	stopOnRollbackError?: boolean;
+	stopOnFailure?: boolean;
 };
 
 /**
@@ -63,9 +75,14 @@ export type RollbackOptions = {
  */
 export type Rollback = {
 	/**
-	 * Registers a rollback operation.
+	 * Registers a rollback operation. Pass `options` to set `parallelGroup` or
+	 * a per-operation `stopOnFailure`.
 	 */
-	add: (description: string, rollback: () => Promise<void>) => void;
+	add: (
+		description: string,
+		rollback: () => Promise<void>,
+		options?: OperationOptions,
+	) => void;
 	/**
 	 * Executes rollback operations in reverse order.
 	 *
@@ -99,10 +116,10 @@ export type WithRollbackOptions = RollbackOptions & {
 	 *
 	 * `withRollback` re-throws the original error and does not return the
 	 * result, so this is the way to observe the failures (and any `pending`
-	 * operations left by `stopOnRollbackError`) — log, alert, metrics.
+	 * operations left by `stopOnFailure`) — log, alert, metrics.
 	 *
 	 * This is an observation hook and must not throw; any error it throws is
 	 * ignored so it cannot mask the original error being re-thrown.
 	 */
-	onRollbackError?: (result: RollbackResult) => void;
+	onFailures?: (result: RollbackResult) => void;
 };

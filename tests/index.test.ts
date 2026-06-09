@@ -50,7 +50,7 @@ describe("createRollback", () => {
 		expect(pending).toEqual([]); // nothing left un-run
 	});
 
-	test("stopOnRollbackError halts and reports pending operations", async () => {
+	test("stopOnFailure halts and reports pending operations", async () => {
 		const order: string[] = [];
 		const boom = new Error("boom");
 		const rb = createRollback();
@@ -62,7 +62,7 @@ describe("createRollback", () => {
 		});
 
 		const { failures, pending } = await rb.rollback({
-			stopOnRollbackError: true,
+			stopOnFailure: true,
 		});
 
 		expect(order).toEqual([]); // "first" never ran
@@ -124,10 +124,10 @@ describe("withRollback", () => {
 		expect(order).toEqual([2, 1]);
 	});
 
-	test("onRollbackError receives the result when an undo throws", async () => {
+	test("onFailures receives the result when an undo throws", async () => {
 		const original = new Error("fn failed");
 		const undoError = new Error("undo failed");
-		const onRollbackError = vi.fn();
+		const onFailures = vi.fn();
 
 		await expect(
 			withRollback(
@@ -137,17 +137,17 @@ describe("withRollback", () => {
 					});
 					throw original;
 				},
-				{ onRollbackError },
+				{ onFailures },
 			),
 		).rejects.toBe(original);
 
-		expect(onRollbackError).toHaveBeenCalledWith({
+		expect(onFailures).toHaveBeenCalledWith({
 			failures: [{ description: "undo", error: undoError }],
 			pending: [],
 		});
 	});
 
-	test("a throwing onRollbackError does not mask the original error", async () => {
+	test("a throwing onFailures does not mask the original error", async () => {
 		const original = new Error("fn failed");
 
 		await expect(
@@ -159,7 +159,7 @@ describe("withRollback", () => {
 					throw original;
 				},
 				{
-					onRollbackError: () => {
+					onFailures: () => {
 						throw new Error("callback boom");
 					},
 				},
@@ -167,8 +167,8 @@ describe("withRollback", () => {
 		).rejects.toBe(original);
 	});
 
-	test("onRollbackError is not called when rollbacks succeed", async () => {
-		const onRollbackError = vi.fn();
+	test("onFailures is not called when rollbacks succeed", async () => {
+		const onFailures = vi.fn();
 
 		await expect(
 			withRollback(
@@ -176,10 +176,10 @@ describe("withRollback", () => {
 					rb.add("undo", async () => {});
 					throw new Error("fn failed");
 				},
-				{ onRollbackError },
+				{ onFailures },
 			),
 		).rejects.toThrow("fn failed");
 
-		expect(onRollbackError).not.toHaveBeenCalled();
+		expect(onFailures).not.toHaveBeenCalled();
 	});
 });
