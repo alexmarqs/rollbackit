@@ -71,10 +71,7 @@ export const createRollback = (): Rollback => {
 
 			committed = true;
 
-			const result = await runRollback(
-				ops,
-				options?.stopOnFailure ?? false,
-			);
+			const result = await runRollback(ops, options?.stopOnFailure ?? false);
 
 			ops.length = 0;
 
