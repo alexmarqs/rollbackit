@@ -30,7 +30,6 @@ Reach for it whenever a sequence of side effects has to be all-or-nothing: creat
   - [`withRollback` (recommended)](#withrollback-recommended)
   - [`createRollback` (manual control)](#createrollback-manual-control)
   - [Committing early (point of no return)](#committing-early-point-of-no-return)
-  - [Concurrent steps](#concurrent-steps-promiseallsettled)
 - [API](#api)
 - [Behavior notes](#behavior-notes)
 - [FAQ](#faq)
@@ -230,43 +229,6 @@ try {
 `commit()` is all-or-nothing — it discards the whole undo log. To keep *part* of
 the work reversible past this point, nest a separate `withRollback` for that
 part rather than committing.
-
-### Concurrent steps (`Promise.allSettled`)
-
-When the steps are independent — none needs another's result — you can run them
-in parallel and register each undo as its resource is created. Use
-`Promise.allSettled`, **not** `Promise.all`.
-
-You still fail the operation: re-throw the first rejection (below) and the error
-propagates just as it would with `Promise.all`. The difference is *timing*.
-`Promise.all` rejects while the other operations are still running — JS can't
-cancel them, so a sibling can create its resource (or call `add()`) *after*
-you've rolled back, leaking the resource and throwing `RollbackCommittedError`
-from the late `add()`. `allSettled` lets every operation settle first, so the
-rollback is complete and correct. (`Promise.all` is only fine when the parallel
-steps register no rollbacks — e.g. pure reads.)
-
-```ts
-await withRollback(async (rb) => {
-  const results = await Promise.allSettled([
-    db.createUser(data).then((u) =>
-      rb.add("delete user", () => db.deleteUser(u.id)),
-    ),
-    storage.createBucket(id).then((b) =>
-      rb.add("delete bucket", () => storage.deleteBucket(b.id)),
-    ),
-    search.createIndex(id).then((i) =>
-      rb.add("delete index", () => search.deleteIndex(i.id)),
-    ),
-  ]);
-
-  // surface the first failure → withRollback undoes whichever steps succeeded
-  const failed = results.find((r) => r.status === "rejected");
-  if (failed) throw failed.reason;
-
-  return results;
-});
-```
 
 ## API
 
