@@ -1,10 +1,10 @@
-import { RolledBackError } from "./errors";
 import type {
 	FailedRollback,
 	Rollback,
 	RollbackOperation,
 	RollbackResult,
-} from "./types";
+} from "../types";
+import { RolledBackError } from "./errors";
 
 /**
  * Runs the rollback operations in reverse order.

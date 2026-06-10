@@ -1,5 +1,5 @@
+import type { Rollback, WithRollbackOptions } from "../types";
 import { createRollback } from "./operations";
-import type { Rollback, WithRollbackOptions } from "./types";
 
 /**
  * Runs `fn` with a scoped rollback instance.

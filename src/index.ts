@@ -1,6 +1,6 @@
-export { RollbackError, RolledBackError } from "./lib/core/errors";
-export { withRollback } from "./lib/core/helpers";
-export { createRollback } from "./lib/core/operations";
+export { RollbackError, RolledBackError } from "./lib/errors";
+export { withRollback } from "./lib/helpers";
+export { createRollback } from "./lib/operations";
 export type {
 	FailedRollback,
 	Rollback,
@@ -8,4 +8,4 @@ export type {
 	RollbackOptions,
 	RollbackResult,
 	WithRollbackOptions,
-} from "./lib/core/types";
+} from "./types";
