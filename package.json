@@ -3,7 +3,7 @@
 	"type": "module",
 	"version": "0.0.0",
 	"sideEffects": false,
-	"description": "Roll back multi-step operations type safely when something fails — register an undo for each step and run them in reverse order. Lightweight, zero dependencies, ESM & CJS.",
+	"description": "Automatic rollback for multi-step operations. Register an undo next to each step; if a later one throws, they unwind in reverse. Zero-dependency, type-safe.",
 	"author": "Alexandre Marques",
 	"license": "MIT",
 	"homepage": "https://github.com/alexmarqs/rollbackit#readme",
@@ -20,7 +20,9 @@
 		"typescript",
 		"typesafe",
 		"transaction",
-		"saga"
+		"compensating-transaction",
+		"saga",
+		"zero-dependency"
 	],
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
@@ -47,6 +49,7 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
+		"changeset": "changeset",
 		"release": "changeset version",
 		"release:publish": "changeset publish",
 		"prepublishOnly": "pnpm run build",
