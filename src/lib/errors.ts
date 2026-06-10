@@ -12,7 +12,7 @@ export const createMessage = (message: string) => `${PREFIX} ${message}`;
  * and `name` reflects the concrete subclass so `instanceof` and stack traces
  * report the right type.
  */
-export class RollbackError extends Error {
+class RollbackError extends Error {
 	constructor(message: string, options?: ErrorOptions) {
 		super(createMessage(message), options);
 		this.name = new.target.name;

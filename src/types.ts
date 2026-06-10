@@ -2,12 +2,12 @@
  * Per-operation options, set via the third argument to `add`.
  *
  * `stopOnFailure` here is the operation-level counterpart of the run-level
- * {@link RollbackOptions.stopOnFailure}: when *this* operation's rollback
+ * {@link RollbackOptions#stopOnFailure}: when *this* operation's rollback
  * throws, the unwind halts and the older operations are returned as `pending`.
  * It only matters when the run-level flag is `false`; a run-level `true` halts
  * on every failure regardless.
  */
-export type OperationOptions = Pick<RollbackOptions, "stopOnFailure">;
+export type RollbackOperationOptions = Pick<RollbackOptions, "stopOnFailure">;
 
 /**
  * A rollback operation.
@@ -21,12 +21,12 @@ export type RollbackOperation = {
 	 * The rollback function.
 	 */
 	rollback: () => Promise<void>;
-} & OperationOptions;
+} & RollbackOperationOptions;
 
 /**
- * A failed rollback operation.
+ * A failure record for a rollback operation that threw while unwinding.
  */
-export type FailedRollback = {
+export type RollbackFailure = {
 	/**
 	 * The description of the failed rollback operation.
 	 */
@@ -44,7 +44,7 @@ export type RollbackResult = {
 	/**
 	 * Operations that threw while rolling back.
 	 */
-	failures: readonly FailedRollback[];
+	failures: readonly RollbackFailure[];
 	/**
 	 * Operations that were never run because `stopOnFailure` halted the
 	 * sequence early. Carries the `rollback` functions, so the caller can log,
@@ -84,7 +84,7 @@ export type Rollback = {
 	add: (
 		description: string,
 		rollback: () => Promise<void>,
-		options?: OperationOptions,
+		options?: RollbackOperationOptions,
 	) => void;
 	/**
 	 * Executes the rollback operations registered since the last `commit`, in
