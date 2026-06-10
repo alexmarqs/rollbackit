@@ -15,7 +15,7 @@
 
 </div>
 
-**rollbackit** is a tiny, type-safe library for rolling back multi-step operations in TypeScript and JavaScript. Register a compensating *undo* next to each step; if a later step throws, rollbackit runs the undos in reverse order — automatically. It's the **saga / compensating-transaction pattern** for Node.js and the browser, without a workflow engine, a database, or a single dependency. Reach for it whenever a sequence of side effects has to be all-or-nothing: creating a user + bucket + search index, provisioning cloud resources, orchestrating calls across microservices, or any "do several things, undo them cleanly if one fails" flow. 
+**rollbackit** is a tiny, type-safe library that makes multi-step operations all-or-nothing. Register an *undo* next to each step; if a later one throws, they all run in reverse — automatically.
 
 ## Features
 
@@ -27,25 +27,6 @@
 - 🪢 **Progressive commit** — `commit()` seals the current batch and stays open, so independent units of work can share one flow without sharing fate.
 - 🌐 **Framework agnostic** — plain functions, no runtime lock-in. Works with any stack: Express, Fastify, Next.js, NestJS, serverless, or no framework at all.
 - 📦 **ESM & CJS** — works in both module systems, Node 18+, and the browser.
-
-## Contents
-
-- [The problem](#the-problem)
-- [Install](#install)
-- [Quick start](#quick-start)
-- [When to use it](#when-to-use-it)
-- [Features](#features)
-- [Usage](#usage)
-  - [`withRollback` (recommended)](#withrollback-recommended)
-  - [`createRollback` (manual control)](#createrollback-manual-control)
-  - [Committing early (point of no return)](#committing-early-point-of-no-return)
-  - [Batches in one flow (progressive commit)](#batches-in-one-flow-progressive-commit)
-- [API](#api)
-- [Behavior notes](#behavior-notes)
-- [FAQ](#faq)
-- [Contributing](#contributing)
-- [License](#license)
-
 
 ## Install
 
@@ -64,6 +45,25 @@ yarn add rollbackit
 ```bash
 bun add rollbackit
 ```
+
+## Contents
+
+- [Features](#features)
+- [Install](#install)
+- [The problem](#the-problem)
+- [Quick start](#quick-start)
+- [When to use it](#when-to-use-it)
+- [Usage](#usage)
+  - [`withRollback` (recommended)](#withrollback-recommended)
+  - [`createRollback` (manual control)](#createrollback-manual-control)
+  - [Committing early (point of no return)](#committing-early-point-of-no-return)
+  - [Batches in one flow (progressive commit)](#batches-in-one-flow-progressive-commit)
+- [API](#api)
+- [Behavior notes](#behavior-notes)
+- [FAQ](#faq-for-humans-and-ai-agents)
+- [Contributing](#contributing)
+- [License](#license)
+
 
 ## The problem
 
@@ -334,7 +334,7 @@ extends `RollbackOptions` with:
 - **Commit seals, rollback finalizes** — `commit()` seals the current batch and keeps the instance open, so you can register a new batch after it (see [Batches in one flow](#batches-in-one-flow-progressive-commit)). Only `rollback()` finalizes the instance; `add` after a rollback throws `RolledBackError`. Repeat `commit`/`rollback` calls are safe no-ops.
 - **The original error always wins** — `withRollback` re-throws whatever `fn` threw, never a rollback error. Observe rollback failures via `onFailures` (or the returned `RollbackResult` with `createRollback`).
 
-## FAQ
+## FAQ (For humans and AI agents)
 
 **When should I use `withRollback` vs `createRollback`?**
 Prefer `withRollback` — it scopes the lifecycle for you (commit on success, roll back on throw) and is the right fit for ~90% of cases. Drop to `createRollback` when you need manual control over *when* to commit or roll back, or to inspect the `RollbackResult` directly.
