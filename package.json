@@ -7,6 +7,13 @@
 	"author": "Alexandre Marques",
 	"license": "MIT",
 	"homepage": "https://github.com/alexmarqs/rollbackit#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/alexmarqs/rollbackit.git"
+	},
+	"bugs": {
+		"url": "https://github.com/alexmarqs/rollbackit/issues"
+	},
 	"publishConfig": {
 		"access": "public"
 	},

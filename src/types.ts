@@ -104,14 +104,6 @@ export type Rollback = {
 	 * Safe to call multiple times.
 	 */
 	commit: () => void;
-	/**
-	 * Number of registered rollback operations.
-	 */
-	readonly size: number;
-	/**
-	 * Snapshot of currently registered operations.
-	 */
-	readonly operations: readonly RollbackOperation[];
 };
 
 /**

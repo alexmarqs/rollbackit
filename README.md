@@ -58,6 +58,7 @@ bun add rollbackit
 - [API](#api)
 - [Behavior notes](#behavior-notes)
 - [FAQ](#faq-for-humans-and-ai-agents)
+- [Tech Stack](#tech-stack)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -250,8 +251,6 @@ Creates a rollback instance.
 | `add(description, rollback, options?)` | `(string, () => Promise<void>, options?: { stopOnFailure?: boolean }) => void` | Register a rollback operation. Pass `{ stopOnFailure: true }` to halt the unwind if *this* operation's rollback throws (see below). Throws `RolledBackError` if called after `rollback` (after `commit` is fine — see below). |
 | `commit()` | `() => void` | Seal the current batch: treat the work so far as permanent and drop its undos. The instance stays open for the next batch. Safe to call multiple times. |
 | `rollback(options?)` | `(options?: RollbackOptions) => Promise<RollbackResult>` | Run the operations registered since the last `commit`, in reverse order, and finalize the instance. Returns the failures and any `pending` (un-run) operations. Safe to call multiple times; subsequent calls are no-ops. |
-| `size` | `number` | Number of registered operations (read-only). |
-| `operations` | `readonly RollbackOperation[]` | Snapshot of currently registered operations (read-only). |
 
 `RollbackOptions`:
 
@@ -308,7 +307,7 @@ Yes. `commit()` is repeatable — each call seals the current batch and leaves t
 
 ## Tech Stack
 
-Built with tech/tools that I love:
+Built with tech/tools that I enjoy using:
 - [TypeScript](https://www.typescriptlang.org/) - for type safety and developer experience.
 - [Vitest](https://vitest.dev/) - for testing.
 - [Biome](https://biomejs.dev/) - for linting and formatting.
@@ -317,6 +316,7 @@ Built with tech/tools that I love:
 - [GitHub Actions](https://github.com/features/actions) - for CI/CD.
 - [Tsdown](https://tsdown.dev/) -  library bundler powered by Rolldown.
 - [Lefthook](https://github.com/Arkweid/lefthook) - for pre-commit hooks.
+- [CodeRabbit](https://coderabbit.ai/) - for PR-level GitHub code review.
 
 ## Contributing
 
