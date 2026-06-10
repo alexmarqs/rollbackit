@@ -15,8 +15,6 @@
 
 </div>
 
-**rollbackit** is a tiny, type-safe library that makes multi-step operations all-or-nothing. Register an *undo* next to each step; if a later one throws, they all run in reverse — automatically.
-
 ## Features
 
 - 🪶 **Lightweight** — tiny footprint, **zero dependencies**.
