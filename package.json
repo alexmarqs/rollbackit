@@ -1,7 +1,7 @@
 {
 	"name": "rollbackit",
 	"type": "module",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"sideEffects": false,
 	"description": "Automatic rollback for multi-step operations. Register an undo next to each step; if a later one throws, they unwind in reverse. Zero-dependency, type-safe.",
 	"author": "Alexandre Marques",
