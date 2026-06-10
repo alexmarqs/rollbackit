@@ -19,7 +19,8 @@
 		"error-handling",
 		"typescript",
 		"typesafe",
-		"zero-dependencies"
+		"transaction",
+		"saga"
 	],
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
