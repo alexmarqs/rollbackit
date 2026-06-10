@@ -1,14 +1,7 @@
 /**
  * Per-operation options, set via the third argument to `add`.
  */
-export type OperationOptions = {
-	/**
-	 * The group this operation belongs to, if registered with `parallelGroup`.
-	 * Operations sharing a `parallelGroup` are rolled back concurrently, as a
-	 * single step slotted at the position of the group's newest member.
-	 */
-	parallelGroup?: string | number;
-} & Pick<RollbackOptions, "stopOnFailure">;
+export type OperationOptions = {} & Pick<RollbackOptions, "stopOnFailure">;
 
 /**
  * A rollback operation.
@@ -75,7 +68,7 @@ export type RollbackOptions = {
  */
 export type Rollback = {
 	/**
-	 * Registers a rollback operation. Pass `options` to set `parallelGroup` or
+	 * Registers a rollback operation. Pass `options` to set
 	 * a per-operation `stopOnFailure`.
 	 *
 	 * Throws `RolledBackError` once the instance has been rolled back.
