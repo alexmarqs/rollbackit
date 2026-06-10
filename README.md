@@ -15,9 +15,18 @@
 
 </div>
 
-**rollbackit** is a tiny, type-safe library for rolling back multi-step operations in TypeScript and JavaScript. Register a compensating *undo* next to each step; if a later step throws, rollbackit runs the undos in reverse order — automatically. It's the **saga / compensating-transaction pattern** for Node.js and the browser, without a workflow engine, a database, or a single dependency.
+**rollbackit** is a tiny, type-safe library for rolling back multi-step operations in TypeScript and JavaScript. Register a compensating *undo* next to each step; if a later step throws, rollbackit runs the undos in reverse order — automatically. It's the **saga / compensating-transaction pattern** for Node.js and the browser, without a workflow engine, a database, or a single dependency. Reach for it whenever a sequence of side effects has to be all-or-nothing: creating a user + bucket + search index, provisioning cloud resources, orchestrating calls across microservices, or any "do several things, undo them cleanly if one fails" flow. 
 
-Reach for it whenever a sequence of side effects has to be all-or-nothing: creating a user + bucket + search index, provisioning cloud resources, orchestrating calls across microservices, or any "do several things, undo them cleanly if one fails" flow.
+## Features
+
+- 🪶 **Lightweight** — tiny footprint, **zero dependencies**.
+- 🔒 **Type safe** — written in TypeScript, ships with full types.
+- ↩️ **Reverse-order undo** — compensating operations run newest-first (LIFO), the right order to unwind dependent steps.
+- 🧩 **Two ergonomic APIs** — a `withRollback` scope that cleans up for you, or a `createRollback` instance you drive by hand.
+- 🛟 **Failure-aware** — collect every rollback failure, or stop at the first; left-over operations are handed back so you can log or retry.
+- 🪢 **Progressive commit** — `commit()` seals the current batch and stays open, so independent units of work can share one flow without sharing fate.
+- 🌐 **Framework agnostic** — plain functions, no runtime lock-in. Works with any stack: Express, Fastify, Next.js, NestJS, serverless, or no framework at all.
+- 📦 **ESM & CJS** — works in both module systems, Node 18+, and the browser.
 
 ## Contents
 
@@ -134,16 +143,7 @@ That's the whole idea: **register an undo right after each step**. On success, u
 - You only need to release local resources (file handles, sockets) — `try/finally` or `using` / `AsyncDisposableStack` may be enough.
 - You need durable, crash-surviving orchestration with retries across restarts — use a real saga/workflow engine (Temporal, AWS Step Functions, etc.). rollbackit is in-memory and lives for the duration of one process.
 
-## Features
 
-- 🪶 **Lightweight** — tiny footprint, **zero dependencies**.
-- 🔒 **Type safe** — written in TypeScript, ships with full types.
-- ↩️ **Reverse-order undo** — compensating operations run newest-first (LIFO), the right order to unwind dependent steps.
-- 🧩 **Two ergonomic APIs** — a `withRollback` scope that cleans up for you, or a `createRollback` instance you drive by hand.
-- 🛟 **Failure-aware** — collect every rollback failure, or stop at the first; left-over operations are handed back so you can log or retry.
-- 🪢 **Progressive commit** — `commit()` seals the current batch and stays open, so independent units of work can share one flow without sharing fate.
-- 🌐 **Framework agnostic** — plain functions, no runtime lock-in. Works with any stack: Express, Fastify, Next.js, NestJS, serverless, or no framework at all.
-- 📦 **ESM & CJS** — works in both module systems, Node 18+, and the browser.
 
 ## Usage
 
