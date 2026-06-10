@@ -21,7 +21,7 @@ Use **pnpm** (declared `packageManager`). A Lefthook `pre-commit` hook runs `bio
 
 ## Architecture
 
-The entire library is `src/lib/core/` (~4 files), re-exported through `src/index.ts`. There are two public entry points built on one core:
+The entire library is a handful of small files — `src/lib/` (`operations.ts`, `helpers.ts`, `errors.ts`) plus `src/types.ts` — re-exported through `src/index.ts`. There are two public entry points built on one core:
 
 - **`createRollback()`** (`operations.ts`) is the engine. It closes over a single mutable `ops: RollbackOperation[]` array plus a `rolledBack` boolean flag. Everything else is a thin wrapper around it.
 - **`withRollback(fn, options?)`** (`helpers.ts`) is the scoped, recommended API. It creates an instance, runs `fn(rb)`, calls `commit()` on success, and on throw calls `rollback()` then **re-throws the original error**. Because the original error always propagates, rollback failures are observed via the `onFailures` hook, never returned.

@@ -62,6 +62,11 @@ export const createRollback = (): Rollback => {
 			ops.push({ description, rollback, ...options });
 		},
 		commit: () => {
+			if (rolledBack) {
+				// no-op: the instance is already rolled back
+				return;
+			}
+
 			// Seal the current batch: the work so far is now permanent, so we
 			// drop its undo operations. The instance stays open — register the
 			// next batch and commit or roll it back independently.
@@ -80,12 +85,6 @@ export const createRollback = (): Rollback => {
 			ops.length = 0;
 
 			return result;
-		},
-		get operations() {
-			return [...ops];
-		},
-		get size() {
-			return ops.length;
 		},
 	};
 };

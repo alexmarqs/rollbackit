@@ -70,6 +70,23 @@ describe("createRollback", () => {
 		expect(pending.map((op) => op.description)).toEqual(["first"]);
 	});
 
+	test("pending operations carry callable rollbacks the caller can retry", async () => {
+		const retried = vi.fn(async () => {});
+		const rb = createRollback();
+		rb.add("retryable", retried);
+		rb.add("boom", async () => {
+			throw new Error("boom");
+		});
+
+		const { pending } = await rb.rollback({ stopOnFailure: true });
+
+		// the early stop left "retryable" un-run; the caller hands it off / retries
+		expect(retried).not.toHaveBeenCalled();
+		expect(pending).toHaveLength(1);
+		await pending[0]?.rollback();
+		expect(retried).toHaveBeenCalledOnce();
+	});
+
 	test("a per-operation stopOnFailure halts when that op's rollback throws", async () => {
 		const order: string[] = [];
 		const boom = new Error("boom");
@@ -140,22 +157,18 @@ describe("createRollback", () => {
 		expect(failures).toEqual([]);
 	});
 
-	test("add is allowed after commit; the instance stays open", () => {
+	test("add is allowed after commit; the instance stays open", async () => {
+		const undoA = vi.fn(async () => {});
+		const undoB = vi.fn(async () => {});
 		const rb = createRollback();
-		rb.add("a", async () => {});
+		rb.add("a", undoA);
 		rb.commit();
 
-		expect(() => rb.add("b", async () => {})).not.toThrow();
-		expect(rb.size).toBe(1); // commit cleared batch one; "b" is batch two
-	});
+		expect(() => rb.add("b", undoB)).not.toThrow();
 
-	test("size and operations reflect registered operations", () => {
-		const rb = createRollback();
-		expect(rb.size).toBe(0);
-		rb.add("a", async () => {});
-		expect(rb.size).toBe(1);
-		expect(rb.operations).toHaveLength(1);
-		expect(rb.operations[0]?.description).toBe("a");
+		await rb.rollback();
+		expect(undoA).not.toHaveBeenCalled(); // batch one was committed
+		expect(undoB).toHaveBeenCalledOnce(); // "b" is the fresh, current batch
 	});
 });
 
