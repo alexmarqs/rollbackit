@@ -22,13 +22,12 @@ export class RollbackError extends Error {
 
 /**
  * Thrown when a rollback operation is registered after the instance has
- * already been committed or rolled back.
+ * already been rolled back. (Committing does not finalize the instance — it
+ * seals the current batch and leaves it open for more, so registering after
+ * a `commit` is allowed.)
  */
-export class RollbackCommittedError extends RollbackError {
+export class RolledBackError extends RollbackError {
 	constructor(options?: ErrorOptions) {
-		super(
-			"cannot register rollback operations after commit or rollback",
-			options,
-		);
+		super("cannot register rollback operations after rollback", options);
 	}
 }

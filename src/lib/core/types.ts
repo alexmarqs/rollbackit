@@ -77,6 +77,10 @@ export type Rollback = {
 	/**
 	 * Registers a rollback operation. Pass `options` to set `parallelGroup` or
 	 * a per-operation `stopOnFailure`.
+	 *
+	 * Throws `RolledBackError` once the instance has been rolled back.
+	 * Registering after a `commit` is allowed — `commit` only seals the
+	 * current batch, it does not finalize the instance.
 	 */
 	add: (
 		description: string,
@@ -84,14 +88,19 @@ export type Rollback = {
 		options?: OperationOptions,
 	) => void;
 	/**
-	 * Executes rollback operations in reverse order.
+	 * Executes the rollback operations registered since the last `commit`, in
+	 * reverse order. Finalizes the instance.
 	 *
 	 * Safe to call multiple times; subsequent calls are no-ops (returning an
 	 * empty result).
 	 */
 	rollback: (options?: RollbackOptions) => Promise<RollbackResult>;
 	/**
-	 * Prevents rollback from executing and releases internal state.
+	 * Seals the current batch: the work registered so far is treated as
+	 * permanent, so its undo operations are dropped. The instance stays open —
+	 * register the next batch and `commit` or `rollback` it independently. A
+	 * later `rollback` only unwinds what was added since the most recent
+	 * `commit`.
 	 *
 	 * Safe to call multiple times.
 	 */

@@ -1,4 +1,4 @@
-import { RollbackCommittedError } from "./errors";
+import { RolledBackError } from "./errors";
 import type {
 	FailedRollback,
 	Rollback,
@@ -49,27 +49,30 @@ const runRollback = async (
  * @returns The rollback instance.
  */
 export const createRollback = (): Rollback => {
-	let committed = false;
+	let rolledBack = false;
 	const ops: RollbackOperation[] = [];
 
 	return {
 		add: (description, rollback, options) => {
-			if (committed) {
-				throw new RollbackCommittedError();
+			if (rolledBack) {
+				throw new RolledBackError();
 			}
 
 			ops.push({ description, rollback, ...options });
 		},
 		commit: () => {
-			committed = true;
+			// Seal the current batch: the work so far is now permanent, so we
+			// drop its undo operations. The instance stays open — register the
+			// next batch and commit or roll it back independently.
 			ops.length = 0;
 		},
 		rollback: async (options) => {
-			if (committed) {
+			if (rolledBack) {
+				// no-op: the instance is already rolled back
 				return { failures: [], pending: [] };
 			}
 
-			committed = true;
+			rolledBack = true;
 
 			const result = await runRollback(ops, options?.stopOnFailure ?? false);
 

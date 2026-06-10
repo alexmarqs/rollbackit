@@ -1,4 +1,4 @@
-export { RollbackCommittedError, RollbackError } from "./lib/core/errors";
+export { RollbackError, RolledBackError } from "./lib/core/errors";
 export { withRollback } from "./lib/core/helpers";
 export { createRollback } from "./lib/core/operations";
 export type {

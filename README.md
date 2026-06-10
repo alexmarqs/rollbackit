@@ -4,7 +4,7 @@
 
 <h1 align="center">rollbackit</h1>
 
-<p align="center">Type-safe, zero-dependency rollback for multi-step operations in TypeScript & JavaScript.<br/>Register an undo for each step; if anything fails, they run in reverse — automatically.</p>
+<p align="center">Type-safe, zero-dependency, framework-agnostic rollback for multi-step operations in TypeScript & JavaScript.<br/>Register an undo for each step; if anything fails, they run in reverse — automatically.</p>
 
 <p align="center">
   <a href="https://github.com/alexmarqs/rollbackit/actions/workflows/ci.yml"><img src="https://github.com/alexmarqs/rollbackit/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -22,18 +22,18 @@ Reach for it whenever a sequence of side effects has to be all-or-nothing: creat
 ## Contents
 
 - [The problem](#the-problem)
-- [Features](#features)
 - [Install](#install)
 - [Quick start](#quick-start)
 - [When to use it](#when-to-use-it)
+- [Features](#features)
 - [Usage](#usage)
   - [`withRollback` (recommended)](#withrollback-recommended)
   - [`createRollback` (manual control)](#createrollback-manual-control)
   - [Committing early (point of no return)](#committing-early-point-of-no-return)
+  - [Batches in one flow (progressive commit)](#batches-in-one-flow-progressive-commit)
 - [API](#api)
 - [Behavior notes](#behavior-notes)
 - [FAQ](#faq)
-- [Comparison](#comparison)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -85,15 +85,6 @@ const user = await withRollback(async (rb) => {
 It's the saga / compensating-transaction pattern, distilled into one tiny
 helper with no dependencies.
 
-## Features
-
-- 🪶 **Lightweight** — tiny footprint, **zero dependencies**.
-- 🔒 **Type safe** — written in TypeScript, ships with full types.
-- ↩️ **Reverse-order undo** — compensating operations run newest-first (LIFO), the right order to unwind dependent steps.
-- 🧩 **Two ergonomic APIs** — a `withRollback` scope that cleans up for you, or a `createRollback` instance you drive by hand.
-- 🛟 **Failure-aware** — collect every rollback failure, or stop at the first; left-over operations are handed back so you can log or retry.
-- 📦 **ESM & CJS** — works in both module systems, Node 18+, and the browser.
-
 ## Install
 
 ```bash
@@ -140,8 +131,19 @@ That's the whole idea: **register an undo right after each step**. On success, u
 **Reach for something else when:**
 
 - Everything happens in **one database** — use a native DB transaction; it's atomic, this isn't.
-- You only need to release local resources (file handles, sockets) — `try/finally` or `using` / `AsyncDisposableStack` may be enough (see [Comparison](#comparison)).
+- You only need to release local resources (file handles, sockets) — `try/finally` or `using` / `AsyncDisposableStack` may be enough.
 - You need durable, crash-surviving orchestration with retries across restarts — use a real saga/workflow engine (Temporal, AWS Step Functions, etc.). rollbackit is in-memory and lives for the duration of one process.
+
+## Features
+
+- 🪶 **Lightweight** — tiny footprint, **zero dependencies**.
+- 🔒 **Type safe** — written in TypeScript, ships with full types.
+- ↩️ **Reverse-order undo** — compensating operations run newest-first (LIFO), the right order to unwind dependent steps.
+- 🧩 **Two ergonomic APIs** — a `withRollback` scope that cleans up for you, or a `createRollback` instance you drive by hand.
+- 🛟 **Failure-aware** — collect every rollback failure, or stop at the first; left-over operations are handed back so you can log or retry.
+- 🪢 **Progressive commit** — `commit()` seals the current batch and stays open, so independent units of work can share one flow without sharing fate.
+- 🌐 **Framework agnostic** — plain functions, no runtime lock-in. Works with any stack: Express, Fastify, Next.js, NestJS, serverless, or no framework at all.
+- 📦 **ESM & CJS** — works in both module systems, Node 18+, and the browser.
 
 ## Usage
 
@@ -226,9 +228,66 @@ try {
 }
 ```
 
-`commit()` is all-or-nothing — it discards the whole undo log. To keep *part* of
-the work reversible past this point, nest a separate `withRollback` for that
-part rather than committing.
+`commit()` seals everything registered *so far* and drops those undos. Work you
+register *after* it starts a fresh batch that's still reversible — see
+[Batches in one flow](#batches-in-one-flow-progressive-commit) below.
+
+### Batches in one flow (progressive commit)
+
+`commit()` doesn't finalize the instance — it **seals the current batch** and
+stays open. Each commit draws a line: a later `rollback()` only unwinds the
+operations registered *since the last commit*. This lets independent units of
+work share one flow without sharing fate — no nesting required.
+
+```ts
+const rb = createRollback();
+
+// stage one — two side effects, undone together if this batch fails
+async function stageOne() {
+  const user = await db.createUser(data);
+  rb.add("delete user", () => db.deleteUser(user.id));
+
+  const bucket = await storage.createBucket(user.id);
+  rb.add("delete bucket", () => storage.deleteBucket(bucket.id));
+}
+
+// stage two — an independent batch
+async function stageTwo() {
+  const sub = await billing.subscribe(plan);
+  rb.add("cancel subscription", () => billing.cancel(sub.id));
+}
+
+try {
+  await stageOne();
+  rb.commit(); // stage one succeeded — seal it; its undos are dropped
+
+  await stageTwo(); // throws here? only stage two rolls back — stage one stays
+  rb.commit();
+} catch (error) {
+  await rb.rollback(); // unwinds only the batch in progress
+  throw error;
+}
+```
+
+This works inside `withRollback` too — the `rb` it hands your callback is the
+same instance, so committing mid-callback seals a batch and a later throw
+unwinds only what came after it (on success `withRollback` commits the final
+batch for you):
+
+```ts
+await withRollback(async (rb) => {
+  await stageOne(rb);
+  rb.commit(); // seal stage one — survives even if stage two throws
+
+  await stageTwo(rb); // throws? only stage two rolls back, then re-throws
+});
+```
+
+Reach for the manual `createRollback` form over nesting `withRollback` when the
+batches are **sequential or data-driven** (a loop, a pipeline, N stages decided
+at runtime): it keeps the flow flat and lets your control flow set the
+boundaries. The trade-off is the point: once a batch is committed it's
+permanent — `rollback()` never reaches past a `commit` line.
 
 ## API
 
@@ -238,9 +297,9 @@ Creates a rollback instance.
 
 | Member | Type | Description |
 | --- | --- | --- |
-| `add(description, rollback)` | `(string, () => Promise<void>) => void` | Register a rollback operation. Throws `RollbackCommittedError` if called after `commit`/`rollback`. |
-| `commit()` | `() => void` | Mark the work as successful and discard the undo log. Safe to call multiple times. |
-| `rollback(options?)` | `(options?: RollbackOptions) => Promise<RollbackResult>` | Run the registered operations in reverse order. Returns the failures and any `pending` (un-run) operations. Safe to call multiple times; subsequent calls are no-ops. |
+| `add(description, rollback)` | `(string, () => Promise<void>) => void` | Register a rollback operation. Throws `RolledBackError` if called after `rollback` (after `commit` is fine — see below). |
+| `commit()` | `() => void` | Seal the current batch: treat the work so far as permanent and drop its undos. The instance stays open for the next batch. Safe to call multiple times. |
+| `rollback(options?)` | `(options?: RollbackOptions) => Promise<RollbackResult>` | Run the operations registered since the last `commit`, in reverse order, and finalize the instance. Returns the failures and any `pending` (un-run) operations. Safe to call multiple times; subsequent calls are no-ops. |
 | `size` | `number` | Number of registered operations (read-only). |
 | `operations` | `readonly RollbackOperation[]` | Snapshot of currently registered operations (read-only). |
 
@@ -271,7 +330,7 @@ extends `RollbackOptions` with:
 
 - **Reverse order** — rollbacks run newest-first (LIFO), the correct order to unwind dependent steps.
 - **Failures don't stop the sequence** — by default a throwing rollback operation is collected into `result.failures` and the remaining operations still run. Set `stopOnFailure: true` to halt at the first failure; the older, un-run operations are returned in `result.pending` (use this only when compensations are ordered dependencies).
-- **Idempotent lifecycle** — once committed or rolled back, the instance is finalized; further `add` calls throw `RollbackCommittedError`. Repeat `commit`/`rollback` calls are safe no-ops.
+- **Commit seals, rollback finalizes** — `commit()` seals the current batch and keeps the instance open, so you can register a new batch after it (see [Batches in one flow](#batches-in-one-flow-progressive-commit)). Only `rollback()` finalizes the instance; `add` after a rollback throws `RolledBackError`. Repeat `commit`/`rollback` calls are safe no-ops.
 - **The original error always wins** — `withRollback` re-throws whatever `fn` threw, never a rollback error. Observe rollback failures via `onFailures` (or the returned `RollbackResult` with `createRollback`).
 
 ## FAQ
@@ -295,20 +354,7 @@ Don't call `add`. Only register a rollback for steps that created a side effect 
 Yes to all — it ships both ESM and CJS builds with full type declarations, targets Node 18+, and has no Node-specific dependencies, so it runs in the browser too.
 
 **Is it safe to call `rollback()` or `commit()` more than once?**
-Yes. Both finalize the instance; subsequent calls are no-ops (`rollback()` returns an empty result). Calling `add()` after finalizing throws `RollbackCommittedError`.
-
-## Comparison
-
-| | `try/finally` | `using` / `AsyncDisposableStack` | **rollbackit** | Workflow engine (Temporal, Step Functions) |
-| --- | --- | --- | --- | --- |
-| Runs cleanup **only on failure** | manual | no (always disposes) | ✅ yes | ✅ yes |
-| Reverse / LIFO order | manual | ✅ | ✅ | ✅ |
-| Commit / "point of no return" | manual | ✅ (`stack.move()`) | ✅ `commit()` | ✅ |
-| Collects & reports failed compensations | manual | partial (`SuppressedError`) | ✅ `failures` / `pending` | ✅ |
-| Survives process crash, durable retries | ❌ | ❌ | ❌ | ✅ |
-| Dependencies / infra | none | none (TS 5.2+/runtime) | **none** | service + state store |
-
-`AsyncDisposableStack` is the closest built-in, and great for resources you *always* dispose. rollbackit is tuned for the *compensate-only-on-failure* case: it keeps changes on success, runs undos solely when something throws, and hands you a structured report of what failed to roll back.
+Yes. `commit()` is repeatable — each call seals the current batch and leaves the instance open for more (see [Batches in one flow](#batches-in-one-flow-progressive-commit)). `rollback()` finalizes the instance and subsequent calls are no-ops (returning an empty result). Only `add()` after a `rollback()` throws — `RolledBackError`.
 
 ## Contributing
 

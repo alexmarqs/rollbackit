@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createRollback, RollbackCommittedError, withRollback } from "../src";
+import { createRollback, RolledBackError, withRollback } from "../src";
 
 describe("createRollback", () => {
 	test("runs rollback operations in reverse (LIFO) order", async () => {
@@ -77,9 +77,32 @@ describe("createRollback", () => {
 		await rb.rollback();
 		expect(await rb.rollback()).toEqual({ failures: [], pending: [] }); // no-op
 
-		expect(() => rb.add("late", async () => {})).toThrow(
-			RollbackCommittedError,
-		);
+		expect(() => rb.add("late", async () => {})).toThrow(RolledBackError);
+	});
+
+	test("commit seals a batch; rollback only unwinds the current batch", async () => {
+		const undoOne = vi.fn(async () => {});
+		const undoTwo = vi.fn(async () => {});
+		const rb = createRollback();
+
+		rb.add("batch one", undoOne);
+		rb.commit(); // seal batch one — its undo is dropped
+
+		rb.add("batch two", undoTwo);
+		const { failures } = await rb.rollback();
+
+		expect(undoOne).not.toHaveBeenCalled(); // committed, left permanent
+		expect(undoTwo).toHaveBeenCalledOnce(); // only the current batch unwinds
+		expect(failures).toEqual([]);
+	});
+
+	test("add is allowed after commit; the instance stays open", () => {
+		const rb = createRollback();
+		rb.add("a", async () => {});
+		rb.commit();
+
+		expect(() => rb.add("b", async () => {})).not.toThrow();
+		expect(rb.size).toBe(1); // commit cleared batch one; "b" is batch two
 	});
 
 	test("size and operations reflect registered operations", () => {
