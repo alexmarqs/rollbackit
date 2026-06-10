@@ -33,8 +33,9 @@ const runRollback = async (
 			failures.push({ description: op.description, error });
 
 			// stop at the first failure when requested; the older operations
-			// (indices 0..i-1) were never attempted, so report them as pending
-			if (stopOnFailure) {
+			// (indices 0..i-1) were never attempted, so report them as pending.
+			// stop if the run-level flag is set, or if this specific op opted in.
+			if (stopOnFailure || op.stopOnFailure) {
 				return { failures, pending: ops.slice(0, i) };
 			}
 		}

@@ -1,7 +1,13 @@
 /**
  * Per-operation options, set via the third argument to `add`.
+ *
+ * `stopOnFailure` here is the operation-level counterpart of the run-level
+ * {@link RollbackOptions.stopOnFailure}: when *this* operation's rollback
+ * throws, the unwind halts and the older operations are returned as `pending`.
+ * It only matters when the run-level flag is `false`; a run-level `true` halts
+ * on every failure regardless.
  */
-export type OperationOptions = {} & Pick<RollbackOptions, "stopOnFailure">;
+export type OperationOptions = Pick<RollbackOptions, "stopOnFailure">;
 
 /**
  * A rollback operation.

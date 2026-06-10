@@ -48,7 +48,6 @@ bun add rollbackit
 
 - [Features](#features)
 - [Install](#install)
-- [The problem](#the-problem)
 - [Quick start](#quick-start)
 - [When to use it](#when-to-use-it)
 - [Usage](#usage)
@@ -62,54 +61,6 @@ bun add rollbackit
 - [Contributing](#contributing)
 - [License](#license)
 
-
-## The problem
-
-A multi-step operation fails halfway through and leaves a mess: a user row with
-no storage bucket, a charge with no order. Cleaning up by hand means nested
-`try/catch` blocks where every failure path has to remember to undo every prior
-step, in the right order — and that logic drifts the moment you add a step.
-
-**Without rollbackit** — undo logic duplicated across nested catches, easy to get wrong:
-
-```ts
-const user = await db.createUser(data);
-try {
-  const bucket = await storage.createBucket(user.id);
-  try {
-    await search.index(user);
-  } catch (err) {
-    await storage.deleteBucket(bucket.id);
-    await db.deleteUser(user.id);
-    throw err;
-  }
-} catch (err) {
-  await db.deleteUser(user.id);
-  throw err;
-}
-```
-
-**With rollbackit** — each undo sits next to the step it reverses, and they all
-run automatically in reverse order on any failure:
-
-```ts
-import { withRollback } from "rollbackit";
-
-const user = await withRollback(async (rb) => {
-  const created = await db.createUser(data);
-  rb.add("delete user", () => db.deleteUser(created.id));
-
-  const bucket = await storage.createBucket(created.id);
-  rb.add("delete bucket", () => storage.deleteBucket(bucket.id));
-
-  await search.index(created); // throws here? both undos run, newest-first
-
-  return created; // success → nothing is rolled back
-});
-```
-
-It's the saga / compensating-transaction pattern, distilled into one tiny
-helper with no dependencies.
 
 ## Quick start
 
@@ -148,7 +99,7 @@ That's the whole idea: **register an undo right after each step**. On success, u
 
 ### `withRollback` (recommended)
 
-Wraps your steps in a scope (see [the example above](#the-problem)). If the
+Wraps your steps in a scope (see [Quick start](#quick-start) above). If the
 callback succeeds, the scope is committed and nothing is rolled back. If it
 throws, the registered operations run automatically in reverse order before the
 **original error is re-thrown**. Steps with no side effect to undo simply don't
@@ -296,7 +247,7 @@ Creates a rollback instance.
 
 | Member | Type | Description |
 | --- | --- | --- |
-| `add(description, rollback)` | `(string, () => Promise<void>) => void` | Register a rollback operation. Throws `RolledBackError` if called after `rollback` (after `commit` is fine — see below). |
+| `add(description, rollback, options?)` | `(string, () => Promise<void>, options?: { stopOnFailure?: boolean }) => void` | Register a rollback operation. Pass `{ stopOnFailure: true }` to halt the unwind if *this* operation's rollback throws (see below). Throws `RolledBackError` if called after `rollback` (after `commit` is fine — see below). |
 | `commit()` | `() => void` | Seal the current batch: treat the work so far as permanent and drop its undos. The instance stays open for the next batch. Safe to call multiple times. |
 | `rollback(options?)` | `(options?: RollbackOptions) => Promise<RollbackResult>` | Run the operations registered since the last `commit`, in reverse order, and finalize the instance. Returns the failures and any `pending` (un-run) operations. Safe to call multiple times; subsequent calls are no-ops. |
 | `size` | `number` | Number of registered operations (read-only). |
@@ -328,7 +279,7 @@ extends `RollbackOptions` with:
 ## Behavior notes
 
 - **Reverse order** — rollbacks run newest-first (LIFO), the correct order to unwind dependent steps.
-- **Failures don't stop the sequence** — by default a throwing rollback operation is collected into `result.failures` and the remaining operations still run. Set `stopOnFailure: true` to halt at the first failure; the older, un-run operations are returned in `result.pending` (use this only when compensations are ordered dependencies).
+- **Failures don't stop the sequence** — by default a throwing rollback operation is collected into `result.failures` and the remaining operations still run. Set `stopOnFailure: true` to halt at the first failure; the older, un-run operations are returned in `result.pending` (use this only when compensations are ordered dependencies). You can also set it per operation via `add(description, rollback, { stopOnFailure: true })` to halt only if that specific operation's rollback throws; the run-level flag, when `true`, halts on every failure regardless.
 - **Commit seals, rollback finalizes** — `commit()` seals the current batch and keeps the instance open, so you can register a new batch after it (see [Batches in one flow](#batches-in-one-flow-progressive-commit)). Only `rollback()` finalizes the instance; `add` after a rollback throws `RolledBackError`. Repeat `commit`/`rollback` calls are safe no-ops.
 - **The original error always wins** — `withRollback` re-throws whatever `fn` threw, never a rollback error. Observe rollback failures via `onFailures` (or the returned `RollbackResult` with `createRollback`).
 

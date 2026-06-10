@@ -70,6 +70,50 @@ describe("createRollback", () => {
 		expect(pending.map((op) => op.description)).toEqual(["first"]);
 	});
 
+	test("a per-operation stopOnFailure halts when that op's rollback throws", async () => {
+		const order: string[] = [];
+		const boom = new Error("boom");
+		const rb = createRollback();
+		rb.add("first", async () => {
+			order.push("first");
+		});
+		rb.add(
+			"second",
+			async () => {
+				throw boom;
+			},
+			{ stopOnFailure: true },
+		);
+
+		// no run-level flag — the halt comes from the op's own option
+		const { failures, pending } = await rb.rollback();
+
+		expect(order).toEqual([]); // "first" never ran
+		expect(failures).toEqual([{ description: "second", error: boom }]);
+		expect(pending.map((op) => op.description)).toEqual(["first"]);
+	});
+
+	test("a per-operation stopOnFailure does not halt when that op succeeds", async () => {
+		const order: string[] = [];
+		const rb = createRollback();
+		rb.add("first", async () => {
+			order.push("first");
+		});
+		rb.add(
+			"second",
+			async () => {
+				order.push("second");
+			},
+			{ stopOnFailure: true },
+		);
+
+		const { failures, pending } = await rb.rollback();
+
+		expect(order).toEqual(["second", "first"]); // both ran, newest-first
+		expect(failures).toEqual([]);
+		expect(pending).toEqual([]);
+	});
+
 	test("rollback is idempotent; add after finalize throws", async () => {
 		const rb = createRollback();
 		rb.add("undo", async () => {});
