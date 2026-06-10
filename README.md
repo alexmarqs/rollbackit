@@ -46,6 +46,25 @@
 - [Contributing](#contributing)
 - [License](#license)
 
+
+## Install
+
+```bash
+npm install rollbackit
+```
+
+```bash
+pnpm add rollbackit
+```
+
+```bash
+yarn add rollbackit
+```
+
+```bash
+bun add rollbackit
+```
+
 ## The problem
 
 A multi-step operation fails halfway through and leaves a mess: a user row with
@@ -93,24 +112,6 @@ const user = await withRollback(async (rb) => {
 
 It's the saga / compensating-transaction pattern, distilled into one tiny
 helper with no dependencies.
-
-## Install
-
-```bash
-npm install rollbackit
-```
-
-```bash
-pnpm add rollbackit
-```
-
-```bash
-yarn add rollbackit
-```
-
-```bash
-bun add rollbackit
-```
 
 ## Quick start
 
