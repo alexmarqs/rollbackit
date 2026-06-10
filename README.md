@@ -10,6 +10,7 @@
   <a href="https://github.com/alexmarqs/rollbackit/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/alexmarqs/rollbackit/ci.yml?branch=main&label=CI" alt="CI" /></a>
   <a href="https://opensource.org/licenses/MIT" target="_blank"><img height=20 src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
   <a href="https://www.npmjs.com/package/rollbackit"><img src="https://img.shields.io/npm/v/rollbackit.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/rollbackit"><img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="zero dependencies" /></a>
 </p>
 
 </div>
