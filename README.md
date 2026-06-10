@@ -1,16 +1,16 @@
 <div align="center">
 
-<img src="https://github.com/alexmarqs/rollbackit/blob/main/.github/assets/rollbackit.png?raw=true" width="220px" align="center" alt="rollbackit logo" />
+<img src="https://raw.githubusercontent.com/alexmarqs/rollbackit/main/.github/assets/rollbackit.png" width="220px" align="center" alt="rollbackit logo" />
 
 <h1 align="center">rollbackit</h1>
 
 <p align="center">Type-safe, zero-dependency, framework-agnostic rollback for multi-step operations in TypeScript & JavaScript.<br/>Register an undo for each step; if anything fails, they run in reverse — automatically.</p>
 
 <p align="center">
-  <a href="https://github.com/alexmarqs/rollbackit/actions/workflows/ci.yml"><img src="https://github.com/alexmarqs/rollbackit/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/alexmarqs/rollbackit/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/alexmarqs/rollbackit/ci.yml?branch=main&label=CI" alt="CI" /></a>
   <a href="https://opensource.org/licenses/MIT" target="_blank"><img height=20 src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
-  <!-- <a href="https://www.npmjs.com/package/rollbackit"><img src="https://img.shields.io/npm/v/rollbackit.svg" alt="npm version" /></a> -->
-  <!-- <a href="https://bundlephobia.com/package/rollbackit"><img src="https://img.shields.io/bundlephobia/minzip/rollbackit.svg" alt="bundle size" /></a> -->
+  <a href="https://www.npmjs.com/package/rollbackit"><img src="https://img.shields.io/npm/v/rollbackit.svg" alt="npm version" /></a>
+  <a href="https://bundlephobia.com/package/rollbackit"><img src="https://img.shields.io/bundlephobia/minzip/rollbackit.svg" alt="bundle size" /></a>
 </p>
 
 </div>
@@ -305,6 +305,18 @@ Yes to all — it ships both ESM and CJS builds with full type declarations, tar
 
 **Is it safe to call `rollback()` or `commit()` more than once?**
 Yes. `commit()` is repeatable — each call seals the current batch and leaves the instance open for more (see [Batches in one flow](#batches-in-one-flow-progressive-commit)). `rollback()` finalizes the instance and subsequent calls are no-ops (returning an empty result). Only `add()` after a `rollback()` throws — `RolledBackError`.
+
+## Tech Stack
+
+Built with tech/tools that I love:
+- [TypeScript](https://www.typescriptlang.org/) - for type safety and developer experience.
+- [Vitest](https://vitest.dev/) - for testing.
+- [Biome](https://biomejs.dev/) - for linting and formatting.
+- [Changesets](https://changesets.io/) - for versioning and publishing.
+- [pnpm](https://pnpm.io/) - for package management.
+- [GitHub Actions](https://github.com/features/actions) - for CI/CD.
+- [Tsdown](https://tsdown.dev/) -  library bundler powered by Rolldown.
+- [Lefthook](https://github.com/Arkweid/lefthook) - for pre-commit hooks.
 
 ## Contributing
 
