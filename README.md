@@ -262,7 +262,7 @@ Creates a rollback instance.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `failures` | `readonly FailedRollback[]` | Operations that threw while rolling back (`{ description, error }`). |
+| `failures` | `readonly RollbackFailure[]` | Operations that threw while rolling back (`{ description, error }`). |
 | `pending` | `readonly RollbackOperation[]` | Operations never run because `stopOnFailure` halted early (carries the `rollback` fns, so you can log or retry them). Empty unless an early stop occurred. |
 
 ### `withRollback<T>(fn, options?): Promise<T>`

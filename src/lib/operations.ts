@@ -1,6 +1,6 @@
 import type {
-	FailedRollback,
 	Rollback,
+	RollbackFailure,
 	RollbackOperation,
 	RollbackResult,
 } from "../types";
@@ -22,7 +22,7 @@ const runRollback = async (
 	ops: RollbackOperation[],
 	stopOnFailure: boolean,
 ): Promise<RollbackResult> => {
-	const failures: FailedRollback[] = [];
+	const failures: RollbackFailure[] = [];
 
 	// run the rollback operations in reverse order
 	for (let i = ops.length - 1; i >= 0; i--) {
