@@ -190,11 +190,11 @@ steps). `options` adds `stopOnFailure` (as on `add`) and `timeout` (below).
 ### Timeouts (don't let a hung step skip rollback)
 
 A slow call is a correctness problem, not just a latency one: if your process is
-killed while a step hangs — a Lambda hitting *its* timeout, a pod evicted, a
-request handler past its proxy deadline — control never
-reaches your `catch`, so **rollback never runs** and you leak the resources
-created so far. Give the work its own deadline that fires *first*, a few seconds
-below the platform's, so the unwind happens while you're still alive.
+killed while a step hangs — a Lambda hitting *its* timeout, a pod `SIGKILL`'d past
+its grace period — control never reaches your `catch`, so **rollback never runs**
+and you leak the resources created so far. Give the work its own deadline that
+fires *first*, a few seconds below the platform's, so the unwind happens while
+you're still alive.
 
 Bound a single step with `StepOptions.timeout` (as in [Quick start](#quick-start)),
 or the whole operation with `WithRollbackOptions.timeout` — or both. The
