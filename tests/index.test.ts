@@ -1,5 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
-import { createRollback, RolledBackError, withRollback } from "../src";
+import {
+	createRollback,
+	RolledBackError,
+	TimeoutError,
+	withRollback,
+} from "../src";
 
 describe("createRollback", () => {
 	test("runs rollback operations in reverse (LIFO) order", async () => {
@@ -172,6 +177,205 @@ describe("createRollback", () => {
 	});
 });
 
+describe("createRollback.step", () => {
+	test("returns run's result and registers undo only after run resolves", async () => {
+		const order: string[] = [];
+		const rb = createRollback();
+
+		const value = await rb.step(
+			"create thing",
+			async () => {
+				order.push("run");
+				return { id: 42 };
+			},
+			async (result) => {
+				order.push(`undo:${result.id}`);
+			},
+		);
+
+		expect(value).toEqual({ id: 42 });
+		expect(order).toEqual(["run"]); // undo registered, not yet run
+
+		await rb.rollback();
+		expect(order).toEqual(["run", "undo:42"]); // undo gets run's result
+	});
+
+	test("registers the undo and returns the result when run settles within the timeout", async () => {
+		const rb = createRollback();
+		let aborted = false;
+		const undo = vi.fn(async () => {});
+
+		const value = await rb.step(
+			"fast create",
+			async (signal) => {
+				signal.addEventListener("abort", () => {
+					aborted = true;
+				});
+				return { id: 7 };
+			},
+			undo,
+			{ timeout: 1000 },
+		);
+
+		expect(value).toEqual({ id: 7 }); // run's value passes through
+		expect(aborted).toBe(false); // settled in time, the signal never fired
+
+		await rb.rollback();
+		expect(undo).toHaveBeenCalledOnce(); // the undo was registered
+	});
+
+	test("unwinds multiple steps newest-first, each undo receiving its own result", async () => {
+		const order: string[] = [];
+		const rb = createRollback();
+
+		await rb.step(
+			"a",
+			async () => ({ id: "a" }),
+			async (result) => {
+				order.push(`undo:${result.id}`);
+			},
+		);
+		await rb.step(
+			"b",
+			async () => ({ id: "b" }),
+			async (result) => {
+				order.push(`undo:${result.id}`);
+			},
+		);
+
+		await rb.rollback();
+		expect(order).toEqual(["undo:b", "undo:a"]); // LIFO, results not crossed
+	});
+
+	test("does not register undo when run throws, and propagates", async () => {
+		const undo = vi.fn(async () => {});
+		const rb = createRollback();
+		const boom = new Error("run failed");
+
+		await expect(
+			rb.step(
+				"create thing",
+				async () => {
+					throw boom;
+				},
+				undo,
+			),
+		).rejects.toBe(boom);
+
+		const { failures } = await rb.rollback();
+		expect(undo).not.toHaveBeenCalled();
+		expect(failures).toEqual([]);
+	});
+
+	test("times out run, aborts its signal, and registers no undo", async () => {
+		const undo = vi.fn(async () => {});
+		const rb = createRollback();
+		let aborted = false;
+
+		await expect(
+			rb.step(
+				"slow create",
+				(signal) => {
+					signal.addEventListener("abort", () => {
+						aborted = true;
+					});
+					return new Promise(() => {}); // never settles
+				},
+				undo,
+				{ timeout: 10 },
+			),
+		).rejects.toBeInstanceOf(TimeoutError);
+
+		expect(aborted).toBe(true);
+		expect(undo).not.toHaveBeenCalled();
+	});
+
+	test("a run that rejects synchronously on abort surfaces its own error, not TimeoutError", async () => {
+		// the timeout aborts the signal, then throws TimeoutError; whichever
+		// settles first wins. A synchronous reject in the abort listener settles
+		// the run before TimeoutError is thrown, so the run's error propagates.
+		const undo = vi.fn(async () => {});
+		const rb = createRollback();
+		const abortError = new Error("client aborted");
+
+		await expect(
+			rb.step(
+				"sync-aborting create",
+				(signal) =>
+					new Promise<never>((_, reject) => {
+						signal.addEventListener("abort", () => reject(abortError));
+					}),
+				undo,
+				{ timeout: 10 },
+			),
+		).rejects.toBe(abortError); // NOT a TimeoutError
+
+		// the distinction is cosmetic: either way nothing was registered
+		expect(undo).not.toHaveBeenCalled();
+	});
+
+	test("a run that rejects asynchronously on abort still surfaces TimeoutError", async () => {
+		// an async reject (fetch, DB drivers) lands after TimeoutError is already
+		// thrown, so the timeout wins the race — the common, reliable case.
+		const undo = vi.fn(async () => {});
+		const rb = createRollback();
+
+		await expect(
+			rb.step(
+				"async-aborting create",
+				(signal) =>
+					new Promise<never>((_, reject) => {
+						signal.addEventListener("abort", () => {
+							Promise.resolve().then(() => reject(new Error("client aborted")));
+						});
+					}),
+				undo,
+				{ timeout: 10 },
+			),
+		).rejects.toBeInstanceOf(TimeoutError);
+
+		expect(undo).not.toHaveBeenCalled();
+	});
+
+	test("forwards description and stopOnFailure to the registered op", async () => {
+		const rb = createRollback();
+		const boom = new Error("undo failed");
+
+		// older step first, so it remains pending when the newer one halts
+		await rb.step(
+			"older",
+			async () => "older",
+			async () => {},
+		);
+		await rb.step(
+			"create thing",
+			async () => "ok",
+			async () => {
+				throw boom;
+			},
+			{ stopOnFailure: true },
+		);
+
+		const { failures, pending } = await rb.rollback();
+		expect(failures).toEqual([{ description: "create thing", error: boom }]);
+		// per-op stopOnFailure halted before the older step's undo ran
+		expect(pending.map((op) => op.description)).toEqual(["older"]);
+	});
+
+	test("throws when the instance is already rolled back", async () => {
+		const rb = createRollback();
+		await rb.rollback();
+
+		await expect(
+			rb.step(
+				"late",
+				async () => "x",
+				async () => {},
+			),
+		).rejects.toBeInstanceOf(RolledBackError);
+	});
+});
+
 describe("withRollback", () => {
 	test("returns the result and does not roll back on success", async () => {
 		const undo = vi.fn(async () => {});
@@ -245,6 +449,128 @@ describe("withRollback", () => {
 				},
 			),
 		).rejects.toBe(original);
+	});
+
+	test("timeout rolls back what was registered and throws TimeoutError", async () => {
+		const undo = vi.fn(async () => {});
+
+		await expect(
+			withRollback(
+				async (rb) => {
+					rb.add("undo", undo);
+					await new Promise(() => {}); // hang past the budget
+				},
+				{ timeout: 10 },
+			),
+		).rejects.toBeInstanceOf(TimeoutError);
+
+		expect(undo).toHaveBeenCalledOnce(); // the prior step was unwound
+	});
+
+	test("passes an abort signal that fires on timeout", async () => {
+		let aborted = false;
+
+		await expect(
+			withRollback(
+				async (_rb, signal) => {
+					signal.addEventListener("abort", () => {
+						aborted = true;
+					});
+					await new Promise(() => {});
+				},
+				{ timeout: 10 },
+			),
+		).rejects.toBeInstanceOf(TimeoutError);
+
+		expect(aborted).toBe(true);
+	});
+
+	test("does not time out when fn settles in time", async () => {
+		const result = await withRollback(
+			async () => {
+				await new Promise((resolve) => setTimeout(resolve, 1));
+				return "ok";
+			},
+			{ timeout: 100 },
+		);
+
+		expect(result).toBe("ok");
+	});
+
+	test("an inline step timeout rolls back the prior steps' undos and throws TimeoutError", async () => {
+		const undoFirst = vi.fn(async () => {});
+		const undoSecond = vi.fn(async () => {});
+
+		await expect(
+			withRollback(async (rb) => {
+				await rb.step("first", async () => "first", undoFirst);
+				await rb.step("second", async () => "second", undoSecond);
+				// this step's own timeout fires; nothing for it is registered
+				await rb.step(
+					"slow",
+					() => new Promise<string>(() => {}), // never settles
+					async () => {},
+					{ timeout: 10 },
+				);
+			}),
+		).rejects.toBeInstanceOf(TimeoutError);
+
+		// the timeout propagated into the rollback path, unwinding what was
+		// registered before the slow step, newest-first
+		expect(undoSecond).toHaveBeenCalledOnce();
+		expect(undoFirst).toHaveBeenCalledOnce();
+	});
+
+	test("onFailures observes a failing undo after a timeout rollback", async () => {
+		const undoError = new Error("undo failed");
+		const onFailures = vi.fn();
+
+		await expect(
+			withRollback(
+				async (rb) => {
+					rb.add("undo", async () => {
+						throw undoError;
+					});
+					await new Promise(() => {}); // hang past the budget
+				},
+				{ timeout: 10, onFailures },
+			),
+		).rejects.toBeInstanceOf(TimeoutError);
+
+		expect(onFailures).toHaveBeenCalledWith({
+			failures: [{ description: "undo", error: undoError }],
+			pending: [],
+		});
+	});
+
+	test("a step still running when the outer timeout fires refuses to register its undo", async () => {
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const undo = vi.fn(async () => {});
+		let stepPromise: Promise<unknown> | undefined;
+
+		await expect(
+			withRollback(
+				async (rb) => {
+					// run is still in flight when the outer budget elapses
+					stepPromise = rb.step(
+						"slow create",
+						() => gate.then(() => "done"),
+						undo,
+					);
+					await new Promise(() => {}); // hang so the outer timeout triggers
+				},
+				{ timeout: 10 },
+			),
+		).rejects.toBeInstanceOf(TimeoutError);
+
+		// let the in-flight run resolve now; the post-run guard sees the
+		// rolled-back instance and surfaces it like any post-rollback add
+		release?.();
+		await expect(stepPromise).rejects.toBeInstanceOf(RolledBackError);
+		expect(undo).not.toHaveBeenCalled(); // never registered, never unwound
 	});
 
 	test("onFailures is not called when rollbacks succeed", async () => {

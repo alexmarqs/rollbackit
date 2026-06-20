@@ -4,7 +4,7 @@
 
 <h1 align="center">rollbackit</h1>
 
-<p align="center">Type-safe, zero-dependency, framework-agnostic rollback for multi-step operations in TypeScript & JavaScript.<br/>Register an undo for each step; if anything fails, they run in reverse — automatically.</p>
+<p align="center">Type-safe, zero-dependency, framework-agnostic rollback for multi-step operations in TypeScript & JavaScript.<br/>Register a rollback for each step; if anything fails, they run in reverse — automatically.</p>
 
 <p align="center">
   <a href="https://github.com/alexmarqs/rollbackit/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/alexmarqs/rollbackit/ci.yml?branch=main&label=CI" alt="CI" /></a>
@@ -19,8 +19,10 @@
 
 - 🪶 **Lightweight** — tiny footprint, **zero dependencies**.
 - 🔒 **Type safe** — written in TypeScript, ships with full types.
-- ↩️ **Reverse-order undo** — compensating operations run newest-first (LIFO), the right order to unwind dependent steps.
+- ↩️ **Reverse-order rollback** — compensating operations run newest-first (LIFO), the right order to unwind dependent steps.
 - 🧩 **Two ergonomic APIs** — a `withRollback` scope that cleans up for you, or a `createRollback` instance you drive by hand.
+- 🔗 **Action + rollback in one call** — `step()` runs a forward action and registers its compensation together, registering the rollback only if the action succeeds (and threading its result into the rollback).
+- ⏱️ **Timeouts & cancellation** — bound a single `step` or the whole operation; a `TimeoutError` is thrown and an `AbortSignal` is fired so in-flight work can cancel and **rollback still runs** even when a call hangs.
 - 🛟 **Failure-aware** — collect every rollback failure, or stop at the first; left-over operations are handed back so you can log or retry.
 - 🪢 **Progressive commit** — `commit()` seals the current batch and stays open, so independent units of work can share one flow without sharing fate.
 - 🌐 **Framework agnostic** — plain functions, no runtime lock-in. Works with any stack: Express, Fastify, Next.js, NestJS, serverless, or no framework at all.
@@ -53,6 +55,8 @@ bun add rollbackit
 - [Usage](#usage)
   - [`withRollback` (recommended)](#withrollback-recommended)
   - [`createRollback` (manual control)](#createrollback-manual-control)
+  - [Pairing a step with its rollback (`step`)](#pairing-a-step-with-its-rollback-step)
+  - [Timeouts (don't let a hung step skip rollback)](#timeouts-dont-let-a-hung-step-skip-rollback)
   - [Committing early (point of no return)](#committing-early-point-of-no-return)
   - [Batches in one flow (progressive commit)](#batches-in-one-flow-progressive-commit)
 - [API](#api)
@@ -70,7 +74,7 @@ import { withRollback } from "rollbackit";
 
 const result = await withRollback(async (rb) => {
   const user = await db.createUser(data);
-  rb.add("delete user", () => db.deleteUser(user.id)); // undo for the step above
+  rb.add("delete user", () => db.deleteUser(user.id)); // rollback for the step above
 
   await sendWelcomeEmail(user); // if this throws, "delete user" runs, then the error re-throws
 
@@ -78,7 +82,21 @@ const result = await withRollback(async (rb) => {
 });
 ```
 
-That's the whole idea: **register an undo right after each step**. On success, undos are discarded; on failure, they run newest-first and the original error propagates.
+That's the whole idea: **register a rollback right after each step**. On success, rollbacks are discarded; on failure, they run newest-first and the original error propagates.
+
+Prefer to run the action and register its rollback in one call? Use [`step`](#pairing-a-step-with-its-rollback-step), which also unlocks per-step and whole-operation [timeouts](#timeouts-dont-let-a-hung-step-skip-rollback):
+
+```ts
+const user = await withRollback(async (rb) => {
+  // step runs createUser, and registers the rollback only if it succeeds
+  return rb.step(
+    "create user",
+    (signal) => db.createUser(data, { signal }),
+    (user) => db.deleteUser(user.id),
+    { timeout: 5_000 },
+  );
+});
+```
 
 ## When to use it
 
@@ -103,7 +121,7 @@ That's the whole idea: **register an undo right after each step**. On success, u
 Wraps your steps in a scope (see [Quick start](#quick-start) above). If the
 callback succeeds, the scope is committed and nothing is rolled back. If it
 throws, the registered operations run automatically in reverse order before the
-**original error is re-thrown**. Steps with no side effect to undo simply don't
+**original error is re-thrown**. Steps with no side effect to roll back simply don't
 register an `add`.
 
 Because the original error propagates, `withRollback` does not return the
@@ -139,18 +157,103 @@ try {
 
   rb.commit(); // all good — keep the changes
 } catch (error) {
-  const { failures } = await rb.rollback(); // undo in reverse order
+  const { failures } = await rb.rollback(); // roll back in reverse order
   if (failures.length) {
-    logger.warn("rollback incomplete", failures); // operations that threw while undoing
+    logger.warn("rollback incomplete", failures); // operations that threw while rolling back
   }
   throw error;
 }
 ```
 
+### Pairing a step with its rollback (`step`)
+
+`add` registers a rollback for work you've *already* done — which means you have to
+get the ordering right by hand: do the thing, then register its compensation,
+and never let an `add` slip in front of the action it reverses. `step` collapses
+that into one call. It runs the forward action and **only registers the rollback if
+the action resolves**, so a failed step never leaves a compensation pointing at
+something that was never created.
+
+```ts
+const user = await rb.step(
+  "create user", // names the step; appears in RollbackFailure if the rollback throws
+  (signal) => api.createUser(payload, { signal }),
+  (user) => api.deleteUser(user.id), // receives the result of the forward action
+);
+```
+
+`step(description, run, rollback, options?)` returns whatever `run` returns. The
+`rollback` is called with that value, so you don't have to thread ids through
+outer variables. If `run` throws, nothing is registered and the error propagates — so
+an enclosing `withRollback` unwinds the *earlier* steps, not this one. `options`
+takes the same `stopOnFailure` as `add`, plus a `timeout` (below).
+
+> `description` names the **step** by its forward intent (e.g. `"create user"`).
+> It only surfaces in a `RollbackFailure`, and every entry there is a
+> compensation that threw while unwinding — so `{ description: "create user" }`
+> reads unambiguously as "the compensation for the create-user step failed". A
+> failing `run` needs no label — it throws its own error.
+
+### Timeouts (don't let a hung step skip rollback)
+
+A slow call is a correctness problem, not just a latency one: if your process is
+killed while a step hangs — a Lambda hitting *its* timeout, a pod evicted, a
+request handler past its proxy deadline — control never
+reaches your `catch`, so **rollback never runs** and you leak the resources
+created so far. Give the work its own deadline that fires *first*, a few seconds
+below the platform's, so the unwind happens while you're still alive.
+
+There are two levels, use either or both:
+
+```ts
+await withRollback(
+  async (rb, signal) => {
+    await rb.step(
+      "create user",
+      (signal) => api.createUser(payload, { signal }), // per-step deadline
+      (user) => api.deleteUser(user.id),
+      { timeout: 5_000 },
+    );
+    await slowThing(signal); // thread the scope signal into your own calls
+  },
+  { timeout: 25_000 }, // whole-operation safety net, below the platform limit
+);
+```
+
+Both throw `TimeoutError` (a `RollbackError` subclass) when they fire. A
+timed-out `withRollback` unwinds whatever was registered before re-throwing.
+
+**Thread the signal into your calls.** A timeout makes you *stop waiting*, but it
+can't cancel a running promise. When it fires, `rollbackit` also aborts an
+`AbortSignal` — `step` passes one to `run`, `withRollback` passes one to `fn` as
+its second argument. That signal is the only thing that can stop the in-flight
+work, and only if your call honors it (`fetch(url, { signal })`, drivers and SDKs
+that accept one). Pass it and the hung request is torn down; ignore it and the
+request keeps running in the background.
+
+**The error you catch on timeout is usually `TimeoutError` — but not always.** On
+timeout `rollbackit` aborts the signal and *then* rejects with `TimeoutError`, and
+whichever settles first wins. Async clients (`fetch`, DB drivers — anything that
+rejects on a later tick when aborted) settle after the `TimeoutError` is already
+in flight, so you reliably catch `TimeoutError`. The exception is a `run` that
+rejects **synchronously** inside its own `abort` listener: that rejection settles
+first, so *your* error propagates instead. Either way the step's rollback is never
+registered and the unwind still runs — only the error type differs. Don't gate
+cleanup on `instanceof TimeoutError`; gate it on the rejection itself.
+
+**A timed-out step is left in an unknown state.** Its `run` never returned, so
+`rollbackit` has no result and never registers its rollback — yet the request may
+have *already created the resource* on the server before the timeout fired (or
+before the abort reached it). Aborting shrinks that window but can't close it:
+the work might be done by the time you give up. So for forward actions that
+create things, make them **idempotent or reconcilable** (a later retry or sweep
+can find and clean up the orphan), and give the timeout enough margin that a
+genuine success isn't cut off.
+
 ### Committing early (point of no return)
 
 `commit()` doesn't have to run at the end. Call it mid-flow at the **pivot** —
-the step after which undoing the earlier work would be wrong (money moved, an
+the step after which rolling back the earlier work would be wrong (money moved, an
 event was published, an irreversible action happened). Everything registered so
 far is sealed; a later failure rolls *forward* (retry, alert), never back.
 
@@ -174,12 +277,12 @@ try {
 
   return order;
 } catch (error) {
-  await rb.rollback(); // only undoes if we threw *before* commit (before charging)
+  await rb.rollback(); // only rolls back if we threw *before* commit (before charging)
   throw error;
 }
 ```
 
-`commit()` seals everything registered *so far* and drops those undos. Work you
+`commit()` seals everything registered *so far* and drops those rollbacks. Work you
 register *after* it starts a fresh batch that's still reversible — see
 [Batches in one flow](#batches-in-one-flow-progressive-commit) below.
 
@@ -193,7 +296,7 @@ work share one flow without sharing fate — no nesting required.
 ```ts
 const rb = createRollback();
 
-// stage one — two side effects, undone together if this batch fails
+// stage one — two side effects, rolled back together if this batch fails
 async function stageOne() {
   const user = await db.createUser(data);
   rb.add("delete user", () => db.deleteUser(user.id));
@@ -210,7 +313,7 @@ async function stageTwo() {
 
 try {
   await stageOne();
-  rb.commit(); // stage one succeeded — seal it; its undos are dropped
+  rb.commit(); // stage one succeeded — seal it; its rollbacks are dropped
 
   await stageTwo(); // throws here? only stage two rolls back — stage one stays
   rb.commit();
@@ -249,8 +352,16 @@ Creates a rollback instance.
 | Member | Type | Description |
 | --- | --- | --- |
 | `add(description, rollback, options?)` | `(string, () => Promise<void>, options?: { stopOnFailure?: boolean }) => void` | Register a rollback operation. Pass `{ stopOnFailure: true }` to halt the unwind if *this* operation's rollback throws (see below). Throws `RolledBackError` if called after `rollback` (after `commit` is fine — see below). |
-| `commit()` | `() => void` | Seal the current batch: treat the work so far as permanent and drop its undos. The instance stays open for the next batch. Safe to call multiple times. |
+| `step(description, run, rollback, options?)` | `<T>(string, (signal: AbortSignal) => Promise<T>, (result: T) => Promise<void>, options?: StepOptions) => Promise<T>` | Run `run`, and only if it resolves, register `rollback` (called with `run`'s result); returns `run`'s result. If `run` throws or times out, nothing is registered and the error propagates. Throws `RolledBackError` if called after `rollback`. |
+| `commit()` | `() => void` | Seal the current batch: treat the work so far as permanent and drop its rollbacks. The instance stays open for the next batch. Safe to call multiple times. |
 | `rollback(options?)` | `(options?: RollbackOptions) => Promise<RollbackResult>` | Run the operations registered since the last `commit`, in reverse order, and finalize the instance. Returns the failures and any `pending` (un-run) operations. Safe to call multiple times; subsequent calls are no-ops. |
+
+`StepOptions` (extends the per-operation `{ stopOnFailure }`):
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `timeout` | `number` | — | Abort `run` after this many milliseconds and reject with `TimeoutError` (usually — see [notes](#timeouts-dont-let-a-hung-step-skip-rollback)). The `AbortSignal` passed to `run` fires on timeout. No rollback is registered. |
+| `stopOnFailure` | `boolean` | `false` | Halt the unwind if this step's `rollback` throws (per-operation, same as `add`). |
 
 `RollbackOptions`:
 
@@ -267,12 +378,13 @@ Creates a rollback instance.
 
 ### `withRollback<T>(fn, options?): Promise<T>`
 
-Runs `fn(rollback)` within a scope: commits on success, rolls back in reverse
-order on failure (then re-throws the original error). `WithRollbackOptions`
+Runs `fn(rollback, signal)` within a scope: commits on success, rolls back in
+reverse order on failure (then re-throws the original error). `WithRollbackOptions`
 extends `RollbackOptions` with:
 
 | Option | Type | Description |
 | --- | --- | --- |
+| `timeout` | `number` | Whole-operation budget in ms. If `fn` doesn't settle in time, the scope rolls back and a `TimeoutError` is thrown. `fn` receives an `AbortSignal` (2nd arg) that fires on timeout. Bounds the forward work only, not the unwind. |
 | `onFailures` | `(result: RollbackResult) => void` | Called with the `RollbackResult` when `fn` throws and one or more rollback operations also throw while unwinding. Observation hook — it must not throw; any error it throws is ignored so it can't mask the original error. |
 
 ## Behavior notes
@@ -288,15 +400,15 @@ extends `RollbackOptions` with:
 Prefer `withRollback` — it scopes the lifecycle for you (commit on success, roll back on throw) and is the right fit for ~90% of cases. Drop to `createRollback` when you need manual control over *when* to commit or roll back, or to inspect the `RollbackResult` directly.
 
 **What happens if a rollback operation itself throws?**
-It's recorded in `result.failures` and the remaining operations still run, so one bad undo doesn't strand the rest. Set `stopOnFailure: true` to halt instead; whatever was left un-run comes back in `result.pending`.
+It's recorded in `result.failures` and the remaining operations still run, so one bad rollback doesn't strand the rest. Set `stopOnFailure: true` to halt instead; whatever was left un-run comes back in `result.pending`.
 
 **Is this a replacement for database transactions?**
-No. If all your work is in one database, use a native transaction — it's truly atomic. rollbackit is for *distributed* side effects across systems that have no shared transaction (DB + storage + search + external APIs), where the only way to "undo" is to run a compensating action.
+No. If all your work is in one database, use a native transaction — it's truly atomic. rollbackit is for *distributed* side effects across systems that have no shared transaction (DB + storage + search + external APIs), where the only way to reverse a step is to run a compensating action.
 
 **Does rollback run in parallel?**
 No — operations roll back sequentially, newest-first, which is the safe default for dependent steps. If you have independent cleanups you want concurrent, compose them inside a single rollback function: `rb.add("cleanup", () => Promise.allSettled([a(), b()]))`.
 
-**What if a step has nothing to undo?**
+**What if a step has nothing to roll back?**
 Don't call `add`. Only register a rollback for steps that created a side effect worth reversing (pure reads, validation, etc. register nothing).
 
 **Does it work with CommonJS / ESM / the browser?**

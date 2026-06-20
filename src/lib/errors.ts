@@ -31,3 +31,12 @@ export class RolledBackError extends RollbackError {
 		super("cannot register rollback operations after rollback", options);
 	}
 }
+
+/**
+ * Thrown when an operation does not settle within its configured `timeout`.
+ */
+export class TimeoutError extends RollbackError {
+	constructor(timeout: number, options?: ErrorOptions) {
+		super(`operation timed out after ${timeout}ms`, options);
+	}
+}
