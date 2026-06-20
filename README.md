@@ -177,22 +177,15 @@ something that was never created.
 ```ts
 const user = await rb.step(
   "create user", // names the step; appears in RollbackFailure if the rollback throws
-  (signal) => api.createUser(payload, { signal }),
+  () => api.createUser(payload),
   (user) => api.deleteUser(user.id), // receives the result of the forward action
 );
 ```
 
-`step(description, run, rollback, options?)` returns whatever `run` returns. The
-`rollback` is called with that value, so you don't have to thread ids through
-outer variables. If `run` throws, nothing is registered and the error propagates — so
-an enclosing `withRollback` unwinds the *earlier* steps, not this one. `options`
-takes the same `stopOnFailure` as `add`, plus a `timeout` (below).
-
-> `description` names the **step** by its forward intent (e.g. `"create user"`).
-> It only surfaces in a `RollbackFailure`, and every entry there is a
-> compensation that threw while unwinding — so `{ description: "create user" }`
-> reads unambiguously as "the compensation for the create-user step failed". A
-> failing `run` needs no label — it throws its own error.
+`step` returns whatever `run` returns and calls `rollback` with that value, so you
+don't thread ids through outer variables. If `run` throws, nothing is registered
+and the error propagates (an enclosing `withRollback` then unwinds the *earlier*
+steps). `options` adds `stopOnFailure` (as on `add`) and `timeout` (below).
 
 ### Timeouts (don't let a hung step skip rollback)
 
@@ -203,52 +196,41 @@ reaches your `catch`, so **rollback never runs** and you leak the resources
 created so far. Give the work its own deadline that fires *first*, a few seconds
 below the platform's, so the unwind happens while you're still alive.
 
-There are two levels, use either or both:
+Bound a single step with `StepOptions.timeout` (as in [Quick start](#quick-start)),
+or the whole operation with `WithRollbackOptions.timeout` — or both. The
+whole-operation budget is the safety net to set under a platform limit; `fn`
+receives an `AbortSignal` to thread into your slow calls:
 
 ```ts
 await withRollback(
   async (rb, signal) => {
-    await rb.step(
+    const user = await rb.step(
       "create user",
-      (signal) => api.createUser(payload, { signal }), // per-step deadline
+      () => api.createUser(payload),
       (user) => api.deleteUser(user.id),
-      { timeout: 5_000 },
     );
-    await slowThing(signal); // thread the scope signal into your own calls
+    await api.activate(user, { signal }); // thread the scope signal into slow calls
   },
-  { timeout: 25_000 }, // whole-operation safety net, below the platform limit
+  { timeout: 25_000 }, // whole-operation budget, a few seconds below the platform limit
 );
 ```
 
-Both throw `TimeoutError` (a `RollbackError` subclass) when they fire. A
-timed-out `withRollback` unwinds whatever was registered before re-throwing.
+Both throw `TimeoutError` (a `RollbackError` subclass); a timed-out `withRollback`
+still unwinds whatever was registered before re-throwing.
 
-**Thread the signal into your calls.** A timeout makes you *stop waiting*, but it
-can't cancel a running promise. When it fires, `rollbackit` also aborts an
-`AbortSignal` — `step` passes one to `run`, `withRollback` passes one to `fn` as
-its second argument. That signal is the only thing that can stop the in-flight
-work, and only if your call honors it (`fetch(url, { signal })`, drivers and SDKs
-that accept one). Pass it and the hung request is torn down; ignore it and the
-request keeps running in the background.
+**Pass the signal into your calls.** A timeout stops you *waiting*, but only the
+`AbortSignal` can stop the in-flight work — and only if your call honors it
+(`fetch(url, { signal })`, most drivers/SDKs). `step` passes it to `run`,
+`withRollback` passes it to `fn` as the second argument; ignore it and the request
+keeps running in the background. (You'll catch `TimeoutError` in practice — the one
+exception is a `run` that rejects *synchronously* on abort, where its own error
+wins the race. Either way nothing is registered, so don't branch cleanup on
+`instanceof TimeoutError`.)
 
-**The error you catch on timeout is usually `TimeoutError` — but not always.** On
-timeout `rollbackit` aborts the signal and *then* rejects with `TimeoutError`, and
-whichever settles first wins. Async clients (`fetch`, DB drivers — anything that
-rejects on a later tick when aborted) settle after the `TimeoutError` is already
-in flight, so you reliably catch `TimeoutError`. The exception is a `run` that
-rejects **synchronously** inside its own `abort` listener: that rejection settles
-first, so *your* error propagates instead. Either way the step's rollback is never
-registered and the unwind still runs — only the error type differs. Don't gate
-cleanup on `instanceof TimeoutError`; gate it on the rejection itself.
-
-**A timed-out step is left in an unknown state.** Its `run` never returned, so
-`rollbackit` has no result and never registers its rollback — yet the request may
-have *already created the resource* on the server before the timeout fired (or
-before the abort reached it). Aborting shrinks that window but can't close it:
-the work might be done by the time you give up. So for forward actions that
-create things, make them **idempotent or reconcilable** (a later retry or sweep
-can find and clean up the orphan), and give the timeout enough margin that a
-genuine success isn't cut off.
+**A timed-out action is left in an unknown state** — it may have created the
+resource on the server before the abort landed, yet no rollback was registered for
+it. Make such actions **idempotent or reconcilable**, and give the timeout enough
+margin that a genuine success isn't cut off.
 
 ### Committing early (point of no return)
 
