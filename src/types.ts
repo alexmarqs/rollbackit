@@ -10,6 +10,31 @@
 export type RollbackOperationOptions = Pick<RollbackOptions, "stopOnFailure">;
 
 /**
+ * Per-step options for {@link Rollback#step}.
+ *
+ * Extends {@link RollbackOperationOptions} (the `stopOnFailure` that governs the
+ * registered compensation) with controls for the forward action.
+ */
+export type StepOptions = RollbackOperationOptions & {
+	/**
+	 * Abort `run` after this many milliseconds and reject with `TimeoutError`.
+	 *
+	 * The `AbortSignal` handed to `run` is aborted when the timeout elapses, so a
+	 * `run` that honors it can cancel its in-flight work. On timeout the
+	 * compensation is never registered and the error propagates, so an outer
+	 * {@link withRollback} unwinds the prior steps.
+	 *
+	 * The signal is aborted just before `TimeoutError` is thrown, and the first
+	 * to settle wins the race. A `run` that rejects asynchronously on abort
+	 * (`fetch`, DB drivers) yields `TimeoutError`; one that rejects
+	 * *synchronously* inside its `abort` listener propagates its own error
+	 * instead. Either way nothing is registered — don't branch cleanup on
+	 * `instanceof TimeoutError`.
+	 */
+	timeout?: number;
+};
+
+/**
  * A rollback operation.
  */
 export type RollbackOperation = {
@@ -96,7 +121,7 @@ export type Rollback = {
 	rollback: (options?: RollbackOptions) => Promise<RollbackResult>;
 	/**
 	 * Seals the current batch: the work registered so far is treated as
-	 * permanent, so its undo operations are dropped. The instance stays open —
+	 * permanent, so its rollback operations are dropped. The instance stays open —
 	 * register the next batch and `commit` or `rollback` it independently. A
 	 * later `rollback` only unwinds what was added since the most recent
 	 * `commit`.
@@ -104,12 +129,43 @@ export type Rollback = {
 	 * Safe to call multiple times.
 	 */
 	commit: () => void;
+	/**
+	 * Runs `run` and, only if it resolves, registers `rollback` (called with
+	 * `run`'s result) as a rollback operation, then returns the result. Pairs a
+	 * forward action with its compensation in one call.
+	 *
+	 * `description` names the step by its forward intent, e.g. `"create user"`,
+	 * and surfaces in {@link RollbackFailure} if the compensation throws while
+	 * unwinding.
+	 *
+	 * If `run` throws or exceeds `options.timeout`, nothing is registered and the
+	 * error propagates. `run` receives an `AbortSignal` that fires on timeout.
+	 *
+	 * Throws `RolledBackError` if the instance is already rolled back.
+	 */
+	step: <T>(
+		description: string,
+		run: (signal: AbortSignal) => Promise<T>,
+		rollback: (result: T) => Promise<void>,
+		options?: StepOptions,
+	) => Promise<T>;
 };
 
 /**
  * Options for {@link withRollback}.
  */
 export type WithRollbackOptions = RollbackOptions & {
+	/**
+	 * Whole-operation budget in milliseconds. If `fn` does not settle within it,
+	 * `withRollback` rejects with `TimeoutError`, which lands in the rollback
+	 * path: the operations registered so far unwind, then the error is thrown.
+	 *
+	 * `fn` receives an `AbortSignal` that fires when the
+	 * timeout elapses, so a `fn` that threads it into its calls can cancel
+	 * in-flight work. A `fn` that ignores it keeps running in the background, and
+	 * any operation it registers after the timeout throws `RolledBackError`.
+	 */
+	timeout?: number;
 	/**
 	 * Called with the rollback result when `fn` throws and one or more rollback
 	 * operations also throw while unwinding.

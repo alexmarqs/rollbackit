@@ -1,5 +1,5 @@
 import type { Rollback, WithRollbackOptions } from "../types";
-import { createRollback } from "./operations";
+import { createRollback, runWithTimeout } from "./operations";
 
 /**
  * Runs `fn` with a scoped rollback instance.
@@ -9,18 +9,25 @@ import { createRollback } from "./operations";
  * original error is re-thrown. Because the original error propagates, the
  * rollback failures are not returned — pass `onFailures` to observe them.
  *
- * @param fn - Receives the rollback instance to register operations on.
- * @param options - Rollback behavior and the `onFailures` callback.
+ * Pass `options.timeout` to bound the whole operation: if `fn` does not settle
+ * in time the scope is rolled back and a `TimeoutError` is thrown. `fn` receives
+ * an `AbortSignal` (its second argument) that fires on timeout.
+ *
+ * @param fn - Receives the rollback instance and an abort signal.
+ * @param options - Rollback behavior, `timeout`, and the `onFailures` callback.
  * @returns The result of `fn`.
  */
 export const withRollback = async <T>(
-	fn: (rollback: Rollback) => Promise<T>,
+	fn: (rollback: Rollback, signal: AbortSignal) => Promise<T>,
 	options?: WithRollbackOptions,
 ): Promise<T> => {
 	const rollback = createRollback();
 
 	try {
-		const result = await fn(rollback);
+		const result = await runWithTimeout(
+			(signal) => fn(rollback, signal),
+			options?.timeout,
+		);
 
 		// if the function succeeds,
 		// commit the rollback, even if it was already committed,

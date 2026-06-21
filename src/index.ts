@@ -1,4 +1,4 @@
-export { RolledBackError } from "./lib/errors";
+export { RolledBackError, TimeoutError } from "./lib/errors";
 export { withRollback } from "./lib/helpers";
 export { createRollback } from "./lib/operations";
 export type {
@@ -8,5 +8,6 @@ export type {
 	RollbackOperationOptions,
 	RollbackOptions,
 	RollbackResult,
+	StepOptions,
 	WithRollbackOptions,
 } from "./types";

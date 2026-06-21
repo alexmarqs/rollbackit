@@ -4,7 +4,45 @@ import type {
 	RollbackOperation,
 	RollbackResult,
 } from "../types";
-import { RolledBackError } from "./errors";
+import { RolledBackError, TimeoutError } from "./errors";
+
+/**
+ * Runs `fn`, passing it an `AbortSignal`. When `timeout` is set, the signal is
+ * aborted and the call rejects with `TimeoutError` if `fn` has not settled in
+ * time; a `fn` that honors the signal can cancel its in-flight work.
+ *
+ * @param fn - The forward action; receives the abort signal.
+ * @param timeout - Optional deadline in milliseconds.
+ * @returns The resolved value of `fn`.
+ */
+export const runWithTimeout = async <T>(
+	fn: (signal: AbortSignal) => Promise<T>,
+	timeout: number | undefined,
+): Promise<T> => {
+	const controller = new AbortController();
+
+	if (timeout === undefined) {
+		return fn(controller.signal);
+	}
+
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	try {
+		return await Promise.race([
+			fn(controller.signal),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(() => {
+					controller.abort();
+					reject(new TimeoutError(timeout));
+				}, timeout);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) {
+			clearTimeout(timer);
+		}
+	}
+};
 
 /**
  * Runs the rollback operations in reverse order.
@@ -44,6 +82,12 @@ const runRollback = async (
 	return { failures, pending: [] };
 };
 
+const throwIfAlreadyRolledBack = (rolledBack: boolean) => {
+	if (rolledBack) {
+		throw new RolledBackError();
+	}
+};
+
 /**
  * Creates a new rollback instance.
  *
@@ -55,11 +99,28 @@ export const createRollback = (): Rollback => {
 
 	return {
 		add: (description, rollback, options) => {
-			if (rolledBack) {
-				throw new RolledBackError();
-			}
+			throwIfAlreadyRolledBack(rolledBack);
 
 			ops.push({ description, rollback, ...options });
+		},
+		step: async (description, run, rollback, options) => {
+			// entry guard: reject before running any forward work.
+			throwIfAlreadyRolledBack(rolledBack);
+
+			const result = await runWithTimeout(run, options?.timeout);
+
+			// run() succeeded — register its compensation. If the instance was
+			// rolled back while run() was in flight (e.g. a withRollback timeout),
+			// registering is no longer valid: surface it like any post-rollback add.
+			throwIfAlreadyRolledBack(rolledBack);
+
+			ops.push({
+				description,
+				rollback: () => rollback(result),
+				stopOnFailure: options?.stopOnFailure,
+			});
+
+			return result;
 		},
 		commit: () => {
 			if (rolledBack) {
